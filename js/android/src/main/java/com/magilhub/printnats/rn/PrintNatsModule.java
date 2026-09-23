@@ -127,6 +127,18 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
         PrintNatsAndroid.setSession(context, GSON.fromJson(sessionJson, Session.class));
     }
 
+    /** Backend device list (GET /devices/fetch-devices): printers + master role are derived natively. */
+    @ReactMethod
+    public void setDevices(String devicesJson) {
+        PrintNatsAndroid.setDevices(context, JsonParser.parseString(devicesJson).getAsJsonArray());
+    }
+
+    @ReactMethod
+    public void isMaster(Promise promise) {
+        PrintNats s = PrintNatsAndroid.get(context);
+        promise.resolve(s != null && s.isMaster());
+    }
+
     @ReactMethod
     public void updateMasterRole(boolean isMaster) {
         sdk().updateMasterRole(isMaster);

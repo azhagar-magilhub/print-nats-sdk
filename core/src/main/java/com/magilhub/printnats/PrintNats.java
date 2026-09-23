@@ -59,11 +59,15 @@ public final class PrintNats {
     private final OrderLookup orders;
     private final List<PrinterConfig> printers = new CopyOnWriteArrayList<>();
     private volatile Session session;
+    private volatile boolean masterRole;
+    private final LogSink logSink;
 
     private PrintNats(Builder b) {
         this.session = b.session;
         this.printers.addAll(b.printers);
         LogSink log = b.log;
+        this.logSink = log;
+        this.masterRole = b.natsConfig != null && b.natsConfig.isMaster;
         final List<PrinterConfig> printerList = this.printers;
         PrintQueue.PrinterLookup lookup = new PrintQueue.PrinterLookup() {
             @Override
@@ -175,8 +179,31 @@ public final class PrintNats {
         pipeline.setSession(s);
     }
 
+    /** Manual override; prefer {@link #setDevices} so the role follows the backend device list. */
     public void updateMasterRole(boolean isMaster) {
+        masterRole = isMaster;
         if (nats != null) nats.updateMasterRole(isMaster);
+    }
+
+    public boolean isMaster() {
+        return masterRole;
+    }
+
+    /**
+     * New backend device list (after PRINTER_CONFIG_UPDATE or a periodic refresh): re-derives printer rows AND the
+     * master role, switching the status-subscription scope immediately if the role changed. Empty list → no-op.
+     */
+    public void setDevices(com.google.gson.JsonArray devices, JsonObject restaurantDetails) {
+        if (devices == null || devices.size() == 0) return;
+        com.magilhub.printnats.rules.Restaurant r = new com.magilhub.printnats.rules.Restaurant(restaurantDetails);
+        List<PrinterConfig> derived = com.magilhub.printnats.rules.DeviceList.printers(devices, session.deviceId, r);
+        if (derived != null) setPrinters(derived);
+        boolean master = com.magilhub.printnats.rules.DeviceList.isMaster(devices, session.deviceId);
+        if (master != masterRole) {
+            masterRole = master;
+            if (nats != null) nats.updateMasterRole(master);
+            if (logSink != null) logSink.append("nats_", "Master role changed → " + (master ? "MASTER" : "client"));
+        }
     }
 
     // ---- printing from the host UI ----------------------------------------------------------------------

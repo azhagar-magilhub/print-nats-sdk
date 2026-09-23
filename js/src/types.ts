@@ -54,7 +54,13 @@ export interface PrintNatsConfig {
   session: Session;
   /** restaurantDetails exactly as the merchant API returns it (uiFeatureFlags, theme, orderTypes, …). */
   restaurant: Record<string, unknown>;
+  /** Explicit printer rows — or leave empty and pass `devices`. */
   printers: PrinterConfig[];
+  /**
+   * Raw backend device list (GET /devices/fetch-devices). When given, the SDK derives the printer rows AND this
+   * device's master role natively (same rules as usePrinterSync / isDefaultPrintDevice).
+   */
+  devices?: unknown[];
   /** Android: restart printing after reboot. */
   autoStartOnBoot?: boolean;
 }
@@ -110,6 +116,10 @@ export interface PrintNatsApi {
   setRestaurant(restaurantDetails: Record<string, unknown>): Promise<void>;
   setPrinters(printers: PrinterConfig[]): Promise<void>;
   setSession(session: Session): Promise<void>;
+  /** New device list after PRINTER_CONFIG_UPDATE: printers + master role re-derived; role switch is immediate. */
+  setDevices(devices: unknown[]): Promise<void>;
+  isMaster(): Promise<boolean>;
+  /** Manual override — prefer setDevices. */
   updateMasterRole(isMaster: boolean): Promise<void>;
   isConnected(): Promise<boolean>;
 

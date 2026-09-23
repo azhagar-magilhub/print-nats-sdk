@@ -37,6 +37,10 @@ export const PrintNats: PrintNatsApi = {
   async setSession(session: Session) {
     requireNative().setSession(JSON.stringify(session));
   },
+  async setDevices(devices: unknown[]) {
+    requireNative().setDevices(JSON.stringify(devices));
+  },
+  isMaster: () => requireNative().isMaster(),
   async updateMasterRole(isMaster: boolean) {
     requireNative().updateMasterRole(isMaster);
   },

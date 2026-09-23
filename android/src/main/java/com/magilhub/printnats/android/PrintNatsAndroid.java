@@ -82,6 +82,16 @@ public final class PrintNatsAndroid {
         if (instance != null) instance.setPrinters(printers);
     }
 
+    /** New backend device list: re-derives printers + master role, persists, applies live. */
+    public static synchronized void setDevices(Context context, com.google.gson.JsonArray devices) {
+        PrintNatsConfig c = savedConfig(context);
+        if (c == null || devices == null || devices.size() == 0) return;
+        c.devices = devices;
+        c.applyDevices();
+        prefs(context).edit().putString(KEY_CONFIG, c.toJson()).apply();
+        if (instance != null) instance.setDevices(devices, c.restaurant);
+    }
+
     /** New access token etc. (no reconnect needed). */
     public static synchronized void setSession(Context context, com.magilhub.printnats.rules.Session session) {
         PrintNatsConfig c = savedConfig(context);

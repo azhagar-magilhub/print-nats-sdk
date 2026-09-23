@@ -73,6 +73,10 @@ export const PrintNats: PrintNatsApi = {
   setSession: async (session: Session) => {
     await call('session', session);
   },
+  setDevices: async (devices: unknown[]) => {
+    await call('devices', devices);
+  },
+  isMaster: () => call<boolean>('master/status'),
   updateMasterRole: async (isMaster: boolean) => {
     await call('master', { isMaster });
   },

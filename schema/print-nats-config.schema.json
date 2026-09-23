@@ -53,6 +53,7 @@
         }
       }
     },
+    "devices": { "type": "array", "description": "Raw backend device list (GET /devices/fetch-devices); when given, printers and nats.isMaster are derived from it" },
     "autoStartOnBoot": { "type": "boolean", "default": false }
   }
 }

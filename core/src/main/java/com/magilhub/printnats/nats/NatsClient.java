@@ -179,6 +179,7 @@ public final class NatsClient {
     /** Switch status-subscription scope while connected (dashboard "switch master device"). */
     public void updateMasterRole(boolean master) {
         if (this.isMaster == master) return;
+        events.onConnectionEvent("role_changed", master ? "master" : "client");
         this.isMaster = master;
         config.isMaster = master;
         JetStream js = jetStream;

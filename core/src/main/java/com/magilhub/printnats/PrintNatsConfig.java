@@ -30,6 +30,12 @@ public final class PrintNatsConfig {
     public Session session = new Session();
     public JsonObject restaurant = new JsonObject();
     public List<PrinterConfig> printers = new ArrayList<>();
+    /**
+     * Optional raw backend device list (GET /devices/fetch-devices). When present the SDK derives BOTH the printer
+     * rows and this device's master role from it ({@link com.magilhub.printnats.rules.DeviceList}); explicit
+     * {@code printers} / {@code nats.isMaster} are then ignored.
+     */
+    public com.google.gson.JsonArray devices;
     public boolean autoStartOnBoot;
 
     public static PrintNatsConfig fromJson(String json) {
@@ -37,12 +43,22 @@ public final class PrintNatsConfig {
         if (c.session == null) c.session = new Session();
         if (c.restaurant == null) c.restaurant = new JsonObject();
         if (c.printers == null) c.printers = new ArrayList<>();
+        c.applyDevices();
         for (PrinterConfig p : c.printers) {
             if (p.connection == null) p.connection = PrinterConfig.Connection.LAN;
             if (p.purpose == null) p.purpose = PrinterConfig.Purpose.STATION_KOT;
             if (p.port == 0) p.port = 9100;
         }
         return c;
+    }
+
+    /** Derive printers + master role from {@link #devices} (no-op when absent or empty). */
+    public void applyDevices() {
+        if (devices == null) return;
+        com.magilhub.printnats.rules.Restaurant r = new com.magilhub.printnats.rules.Restaurant(restaurant);
+        List<PrinterConfig> derived = com.magilhub.printnats.rules.DeviceList.printers(devices, session.deviceId, r);
+        if (derived != null) printers = derived;
+        if (nats != null && devices.size() > 0) nats.isMaster = com.magilhub.printnats.rules.DeviceList.isMaster(devices, session.deviceId);
     }
 
     public String toJson() {
