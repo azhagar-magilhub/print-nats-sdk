@@ -70,6 +70,13 @@ public final class PrintPipeline implements NatsEvents {
     private final Map<String, Long> hostPrintedKots = new ConcurrentHashMap<>();
     static final long HOST_PRINT_MEMORY_MS = 12L * 60 * 60 * 1000;
     private volatile boolean suppressNatsKotAfterHostPrint = false;
+    /** orderId|sortOrder|V → when this (master) device printed a KOT a client relayed; always suppresses NATS copies. */
+    private final Map<String, Long> relayedKots = new ConcurrentHashMap<>();
+    private volatile PrintRelay relay;
+
+    void setRelay(PrintRelay relay) {
+        this.relay = relay;
+    }
 
     /**
      * Hosts that print their own KOTs at order time (maghilOrder: orders are created on the device, online or
@@ -211,7 +218,23 @@ public final class PrintPipeline implements NatsEvents {
     /** Replay messages recorded but not processed before a crash; prune the dedup window. */
     public void recover() {
         inbound.prune(System.currentTimeMillis() - DEDUP_RETENTION_MS);
-        for (InboundStore.Inbound in : inbound.pending()) submit(in);
+        for (final InboundStore.Inbound in : inbound.pending()) {
+            if (in.key != null && in.key.startsWith(PrintRelay.KEY_PREFIX)) {
+                final PrintRelay r = relay;
+                if (r == null) {
+                    inbound.markDone(in.key);
+                    continue;
+                }
+                worker.execute(new Runnable() {
+                    @Override
+                    public void run() {
+                        r.replay(in);
+                    }
+                });
+                continue;
+            }
+            submit(in);
+        }
     }
 
     public void shutdown() {
@@ -245,7 +268,7 @@ public final class PrintPipeline implements NatsEvents {
         for (MessageRules.PrintAction a : actions) {
             switch (a.kind) {
                 case KOT:
-                    enqueueKot(a.order, Json.str(a.order, "tableName"), a.isOrderCancelled, in.messageId);
+                    enqueueKot(a.order, Json.str(a.order, "tableName"), a.isOrderCancelled, in.messageId, false);
                     break;
                 case EDIT_KOT:
                     enqueueEditKot(a.order, in.messageId);
@@ -266,7 +289,15 @@ public final class PrintPipeline implements NatsEvents {
 
     /** printKOT: build the payload, route master + stations, queue. Returns the number of tickets queued. */
     public int printKot(JsonObject order, String tableName, boolean isOrderCancelled) {
-        return enqueueKot(order, tableName, isOrderCancelled, null);
+        return enqueueKot(order, tableName, isOrderCancelled, null, false);
+    }
+
+    /**
+     * A KOT a client device relayed to this master: printed like a host-UI KOT and remembered, so the backend's
+     * later NATS/FCM copy of the same order + batch is dropped (regardless of suppressNatsKotAfterHostPrint).
+     */
+    int printRelayedKot(JsonObject order, String tableName, boolean isOrderCancelled) {
+        return enqueueKot(order, tableName, isOrderCancelled, null, true);
     }
 
     public int printEditKot(JsonObject order) {
@@ -317,7 +348,7 @@ public final class PrintPipeline implements NatsEvents {
         return null;
     }
 
-    private int enqueueKot(JsonObject order, String tableName, boolean cancelled, String messageId) {
+    private int enqueueKot(JsonObject order, String tableName, boolean cancelled, String messageId, boolean relayed) {
         Restaurant r = restaurant;
         if (r.branchName() == null) {
             log.append("print_", "Info:: KOT skipped — restaurant branchName missing (legacy guard)");
@@ -337,8 +368,11 @@ public final class PrintPipeline implements NatsEvents {
             }
             lastKotByOrder.put(key, now);
             if (suppressNatsKotAfterHostPrint) hostPrintedKots.put(hostKotKey(order, cancelled), now);
-        } else if (suppressNatsKotAfterHostPrint) {
-            Long printedAt = hostPrintedKots.get(hostKotKey(order, cancelled));
+            if (relayed && Json.str(order, "orderId") != null) relayedKots.put(hostKotKey(order, cancelled), now);
+        } else {
+            String hk = hostKotKey(order, cancelled);
+            Long printedAt = suppressNatsKotAfterHostPrint ? hostPrintedKots.get(hk) : null;
+            if (printedAt == null) printedAt = relayedKots.get(hk);
             if (printedAt != null && System.currentTimeMillis() - printedAt < HOST_PRINT_MEMORY_MS) {
                 log.append("print_", "Info:: KOT skipped — already printed on this device for " + hostKotKey(order, cancelled)
                         + " (message " + messageId + ")");

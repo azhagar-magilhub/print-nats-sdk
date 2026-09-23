@@ -40,4 +40,28 @@ public final class PrinterConfig {
     public boolean isStation() {
         return purpose == Purpose.STATION_KOT;
     }
+
+    /**
+     * Printer id of a client device's relay jobs: KOTs handed to the location's master device over NATS
+     * ({@code printrelay.<locationId>.master}) instead of being printed here. See PrintRelay / RelayTransport.
+     */
+    public static final String RELAY_MASTER_ID = "relay#master";
+    public static final String RELAY_MASTER_NAME = "Master device";
+
+    public static boolean isRelay(String printerId) {
+        return RELAY_MASTER_ID.equals(printerId);
+    }
+
+    /** Synthetic row the queue uses for relay jobs (own lane; never rendered, never probed). */
+    public static PrinterConfig relayMaster() {
+        PrinterConfig p = new PrinterConfig();
+        p.id = RELAY_MASTER_ID;
+        p.name = RELAY_MASTER_NAME;
+        p.modelName = RELAY_MASTER_NAME;
+        p.stationName = RELAY_MASTER_NAME;
+        p.purpose = Purpose.MASTER_KOT;
+        p.connection = Connection.LAN;
+        p.address = "nats";
+        return p;
+    }
 }

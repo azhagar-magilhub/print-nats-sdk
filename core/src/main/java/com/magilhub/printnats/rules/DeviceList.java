@@ -36,7 +36,11 @@ public final class DeviceList {
             JsonObject d = e.getAsJsonObject();
             if ("RECEIPT".equals(Json.str(d, "printTo")) && receiptPrinterId != null
                     && receiptPrinterId.equals(Json.str(d, "id")) && "PRINTER".equals(Json.str(d, "deviceType"))) {
-                out.add(row(d, space, null, "Receipt printer"));
+                // this TAB's receipt printer IS the default receipt printer (MerchantApp printerSaga derives
+                // isDefault from TAB.receiptPrinterId), whatever the printer row's own isDefault says
+                PrinterConfig receipt = row(d, space, null, "Receipt printer");
+                receipt.purpose = PrinterConfig.Purpose.RECEIPT;
+                out.add(receipt);
             }
         }
         for (JsonElement e : devices) {

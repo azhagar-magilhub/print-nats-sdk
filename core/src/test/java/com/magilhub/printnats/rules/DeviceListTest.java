@@ -98,4 +98,20 @@ public class DeviceListTest {
         assertEquals(4, sdk.printers().size());
         sdk.stop();
     }
+
+    @Test
+    public void tabsReceiptPrinterIsReceiptEvenWhenItsRowIsNotDefault() {
+        JsonArray devices = JsonParser.parseString("["
+                + "{\"id\":\"T1\",\"deviceType\":\"TAB\",\"deviceIdentifier\":\"D1\",\"isDefault\":0,\"receiptPrinterId\":\"R2\"},"
+                + "{\"id\":\"R1\",\"deviceType\":\"PRINTER\",\"printTo\":\"RECEIPT\",\"isDefault\":1,\"deviceIdentifier\":\"192.168.1.9\"},"
+                + "{\"id\":\"R2\",\"deviceType\":\"PRINTER\",\"printTo\":\"RECEIPT\",\"isDefault\":0,\"deviceIdentifier\":\"192.168.1.8\"},"
+                + "{\"id\":\"K2\",\"deviceType\":\"PRINTER\",\"printTo\":\"ORDER\",\"isDefault\":0,\"deviceIdentifier\":\"192.168.1.51\",\"tagIds\":[\"C2\"]}"
+                + "]").getAsJsonArray();
+        List<PrinterConfig> p = DeviceList.printers(devices, "D1", restaurant());
+        assertEquals("only this tab's receipt printer + K2", 2, p.size());
+        assertEquals("R2#receipt", p.get(0).id);
+        assertEquals("TAB.receiptPrinterId decides, not the row's isDefault", PrinterConfig.Purpose.RECEIPT, p.get(0).purpose);
+        assertEquals("192.168.1.8", p.get(0).address);
+        assertEquals("other rows unchanged", PrinterConfig.Purpose.STATION_KOT, p.get(1).purpose);
+    }
 }

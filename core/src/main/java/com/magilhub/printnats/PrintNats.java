@@ -74,6 +74,9 @@ public final class PrintNats {
     private final com.magilhub.printnats.discovery.IpOverrides ipOverrides;
     private final TicketRenderer renderer;
     private final com.magilhub.printnats.discovery.PrinterRediscovery rediscovery;
+    private final com.magilhub.printnats.pipeline.PrintRelay relay;
+    private final boolean relayToMaster;
+    private final String relaySubject;
 
     private PrintNats(Builder b) {
         this.session = b.session;
@@ -137,6 +140,7 @@ public final class PrintNats {
             @Override
             public void onConnectionEvent(String type, String detail) {
                 holder.pipeline.onConnectionEvent(type, detail);
+                if (isConnectEvent(type, detail) && holder.queue != null) holder.queue.kickRelay(); // master may be back
             }
 
             @Override
@@ -146,6 +150,7 @@ public final class PrintNats {
         }, log, b.outboxStore);
         this.status = new StatusPublisher(nats == null ? new NatsClient(new NatsConfig(), null, log) : nats, lookup, log,
                 b.deviceState, b.session.locationId, b.session.deviceId);
+        holder.queue = queue;
         queue.addListener(status);
         if (listener != null) queue.addListener(listener);
         this.pipeline = new PrintPipeline(b.inboundStore, queue, new PrintPipeline.PrinterSource() {
@@ -161,6 +166,42 @@ public final class PrintNats {
         }, new Restaurant(b.restaurant), b.session, log, listener);
         holder.pipeline = pipeline;
         pipeline.setSuppressNatsKotAfterHostPrint(b.suppressNatsKotAfterHostPrint);
+
+        // ---- master/client print relay ----
+        this.relayToMaster = b.relayToMaster;
+        this.relay = new com.magilhub.printnats.pipeline.PrintRelay(pipeline, b.inboundStore, log);
+        relay.setHook(b.relayOrderHook);
+        this.relaySubject = com.magilhub.printnats.pipeline.PrintRelay.subject(
+                b.natsConfig != null && b.natsConfig.locationId != null ? b.natsConfig.locationId : b.session.locationId);
+        final com.magilhub.printnats.pipeline.PrintRelay relayRef = relay;
+        final NatsClient natsRef = nats;
+        final String subjectRef = relaySubject;
+        queue.setRelayTransport(new com.magilhub.printnats.transport.RelayTransport(
+                new com.magilhub.printnats.transport.RelayTransport.Link() {
+                    @Override
+                    public boolean isMaster() {
+                        return self.masterRole;
+                    }
+
+                    @Override
+                    public byte[] request(byte[] body, long timeoutMs) {
+                        return natsRef == null ? null : natsRef.request(subjectRef, body, timeoutMs);
+                    }
+
+                    @Override
+                    public byte[] printLocally(byte[] body) {
+                        return relayRef.handle(body);
+                    }
+                }, com.magilhub.printnats.transport.RelayTransport.DEFAULT_TIMEOUT_MS, log));
+        // Every master answers relays (even hosts that don't relay themselves); subscribed only while master.
+        if (nats != null) {
+            nats.serveWhileMaster(relaySubject, new NatsClient.RequestHandler() {
+                @Override
+                public byte[] handle(byte[] request) {
+                    return relayRef.handle(request);
+                }
+            });
+        }
 
         final com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener hostHook = b.addressHook;
         this.rediscovery = new com.magilhub.printnats.discovery.PrinterRediscovery(
@@ -206,6 +247,15 @@ public final class PrintNats {
 
     private static final class PipelineHolder {
         volatile PrintPipeline pipeline;
+        volatile PrintQueue queue;
+    }
+
+    /** A fresh connect, a jnats transparent reconnect, or a master device announcing it serves relays. */
+    static boolean isConnectEvent(String type, String detail) {
+        if ("connected".equals(type) || "relay_master_online".equals(type)) return true;
+        if (!"connection_event".equals(type) || detail == null) return false;
+        String d = detail.toLowerCase(java.util.Locale.ROOT);
+        return d.contains("reconnected") || d.contains("resubscribed");
     }
 
     public static Builder builder() {
@@ -266,8 +316,10 @@ public final class PrintNats {
 
     /** Manual override; prefer {@link #setDevices} so the role follows the backend device list. */
     public void updateMasterRole(boolean isMaster) {
+        boolean changed = masterRole != isMaster;
         masterRole = isMaster;
         if (nats != null) nats.updateMasterRole(isMaster);
+        if (changed) queue.kickRelay(); // new master → print own waiting relays locally; new client → try the master
     }
 
     public boolean isMaster() {
@@ -288,17 +340,92 @@ public final class PrintNats {
             masterRole = master;
             if (nats != null) nats.updateMasterRole(master);
             if (logSink != null) logSink.append("nats_", "Master role changed → " + (master ? "MASTER" : "client"));
+            queue.kickRelay();
         }
     }
 
     // ---- printing from the host UI ----------------------------------------------------------------------
 
+    /**
+     * KOT from the host UI. With {@link Builder#relayToMaster} on and this device not the master, the KOT is NOT
+     * printed here: one durable relay job (printer {@link PrinterConfig#RELAY_MASTER_ID}) hands it to the master
+     * device, retrying until the master takes it. Returns the tickets queued (1 for a relay job).
+     */
     public int printKot(JsonObject orderDetails, String tableName, boolean isOrderCancelled) {
+        if (relayToMaster && !masterRole) {
+            return enqueueRelay(com.magilhub.printnats.pipeline.PrintRelay.KOT, orderDetails, tableName, isOrderCancelled);
+        }
         return pipeline.printKot(orderDetails, tableName, isOrderCancelled);
     }
 
     public int printEditKot(JsonObject orderDetails) {
+        if (relayToMaster && !masterRole) {
+            return enqueueRelay(com.magilhub.printnats.pipeline.PrintRelay.EDIT_KOT, orderDetails, null, false);
+        }
         return pipeline.printEditKot(orderDetails);
+    }
+
+    private int enqueueRelay(String kind, JsonObject order, String tableName, boolean cancelled) {
+        JsonObject req = com.magilhub.printnats.pipeline.PrintRelay.request(kind, order, tableName, cancelled, 0,
+                session.deviceId);
+        PrintJob j = new PrintJob();
+        j.jobId = "relay|" + com.magilhub.printnats.rules.Json.str(req, "relayId");
+        j.kind = com.magilhub.printnats.queue.JobKind.KOT;
+        j.printerId = PrinterConfig.RELAY_MASTER_ID;
+        j.isStation = false;
+        j.payloadJson = req.toString();
+        j.orderId = com.magilhub.printnats.rules.Json.str(order, "orderId");
+        j.orderNo = com.magilhub.printnats.rules.Json.str(order, "orderNo");
+        j.sortOrder = com.magilhub.printnats.rules.Json.str(order, "sortOrder");
+        j.kotNo = com.magilhub.printnats.rules.Json.str(order, "kotNo");
+        j.source = "relay";
+        queue.enqueue(j);
+        if (logSink != null) {
+            logSink.append("print_", "Info:: " + kind + " relayed to master device Or.No: " + j.orderNo + " job=" + j.jobId);
+        }
+        return 1;
+    }
+
+    /**
+     * Receipt printed by the master device (client without its own receipt printer): one synchronous request, no
+     * queue. On the master itself this prints locally. Returns the tickets the master queued, or -1 when no master
+     * answered within {@code timeoutMs} (or it reported an error) — the host then falls back (FCM PRINT_RECEIPT).
+     */
+    public int relayReceipt(JsonObject orderDetails, double cardSurcharge, long timeoutMs) {
+        if (masterRole) return pipeline.printReceipt(orderDetails, cardSurcharge);
+        if (nats == null) return -1;
+        JsonObject req = com.magilhub.printnats.pipeline.PrintRelay.request(com.magilhub.printnats.pipeline.PrintRelay.RECEIPT,
+                orderDetails, null, false, cardSurcharge, session.deviceId);
+        byte[] reply = nats.request(relaySubject, req.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), timeoutMs);
+        JsonObject r = reply == null ? null
+                : com.magilhub.printnats.rules.Json.parseObject(new String(reply, java.nio.charset.StandardCharsets.UTF_8));
+        if (r == null || !com.magilhub.printnats.rules.Json.isTrueBoolean(r, "ok")) {
+            if (logSink != null) {
+                logSink.append("print_", "Info:: Receipt relay to master failed Or.No: " + com.magilhub.printnats.rules.Json.str(orderDetails, "orderNo")
+                        + (r == null ? " (no master answered)" : " " + com.magilhub.printnats.rules.Json.str(r, "error")));
+            }
+            return -1;
+        }
+        String tickets = com.magilhub.printnats.rules.Json.str(r, "tickets");
+        try {
+            return tickets == null ? 0 : (int) Double.parseDouble(tickets);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /** This device has a receipt printer row (the TAB's receiptPrinterId, or an explicit RECEIPT row). */
+    public boolean hasReceiptPrinter() {
+        return receiptPrinter() != null;
+    }
+
+    /** Master-side hook for relayed orders (e.g. assign the KOT number). null clears it. */
+    public void setRelayOrderHook(com.magilhub.printnats.pipeline.RelayOrderHook hook) {
+        relay.setHook(hook);
+    }
+
+    public boolean isRelayToMaster() {
+        return relayToMaster;
     }
 
     public int printReceipt(JsonObject orderDetails) {
@@ -555,6 +682,24 @@ public final class PrintNats {
         private com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener addressHook;
 
         private boolean suppressNatsKotAfterHostPrint;
+        private boolean relayToMaster;
+        private com.magilhub.printnats.pipeline.RelayOrderHook relayOrderHook;
+
+        /**
+         * Only the master device prints: on a client, {@link PrintNats#printKot}/{@link PrintNats#printEditKot} hand
+         * the order to the master over NATS (durable relay job, retried until the master takes it). Default false
+         * (MerchantApp: clients' KOTs reach the master via the backend).
+         */
+        public Builder relayToMaster(boolean relay) {
+            this.relayToMaster = relay;
+            return this;
+        }
+
+        /** See {@link PrintNats#setRelayOrderHook}. */
+        public Builder relayOrderHook(com.magilhub.printnats.pipeline.RelayOrderHook hook) {
+            this.relayOrderHook = hook;
+            return this;
+        }
 
         /** Drop NATS/FCM KOTs for an order + batch this device already printed itself (maghilOrder). */
         public Builder suppressNatsKotAfterHostPrint(boolean suppress) {

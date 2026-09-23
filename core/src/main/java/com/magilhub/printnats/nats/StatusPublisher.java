@@ -49,6 +49,8 @@ public final class StatusPublisher implements JobListener {
     /** Queue events → legacy status strings. "retrying" is not published (legacy never did). */
     @Override
     public void onJobEvent(PrintJob job, String event) {
+        // relay jobs are hand-offs to the master device, which publishes the real print status
+        if (com.magilhub.printnats.queue.PrinterConfig.isRelay(job.printerId)) return;
         String status;
         switch (event) {
             case "inqueue":

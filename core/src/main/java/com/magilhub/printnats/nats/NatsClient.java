@@ -70,6 +70,20 @@ public final class NatsClient {
     static final int PENDING_CORE_CAP = 50;
     static final long PENDING_CORE_MAX_AGE_MS = 60_000;
 
+    // ---- request/reply (print relay) — master serves, clients request ------------------------------------
+    /** Answers one core-NATS request; returns the reply bytes (null = no reply). Runs on the relay dispatcher thread. */
+    public interface RequestHandler {
+        byte[] handle(byte[] request);
+    }
+
+    /** Queue group: if two devices wrongly both think they are master, only one answers each request. */
+    static final String RELAY_QUEUE_GROUP = "printrelay-master";
+    private final Object relayLock = new Object();
+    private volatile String servedSubject;
+    private volatile RequestHandler servedHandler;
+    private Dispatcher relayDispatcher;
+    private boolean relaySubscribed;
+
     private static final class PendingCore {
         final String subject;
         final byte[] data;
@@ -193,6 +207,121 @@ public final class NatsClient {
         }
     }
 
+    // ---- request/reply ----------------------------------------------------------------------------
+
+    /**
+     * Core-NATS request: the reply's bytes, or null when not connected, nobody is listening ("no responders"),
+     * the wait exceeded {@code timeoutMs}, or the call failed.
+     */
+    public byte[] request(String subject, byte[] body, long timeoutMs) {
+        Connection c = connection;
+        if (c == null || c.getStatus() != Connection.Status.CONNECTED) return null;
+        java.util.concurrent.CompletableFuture<Message> f = null;
+        try {
+            f = c.request(subject, body);
+            Message m = f.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+            return m == null ? null : m.getData();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (Throwable t) {
+            if (f != null) f.cancel(true);
+            return null;
+        }
+    }
+
+    /**
+     * Answer requests on {@code subject} while this device is the master (subscribed on connect / when it becomes
+     * master, unsubscribed when it stops being master; kept across reconnects). One subject per client.
+     */
+    public void serveWhileMaster(String subject, RequestHandler handler) {
+        synchronized (relayLock) {
+            if (relaySubscribed && relayDispatcher != null && servedSubject != null && !servedSubject.equals(subject)) {
+                try {
+                    relayDispatcher.unsubscribe(servedSubject);
+                } catch (RuntimeException ignored) {
+                    // gone
+                }
+                relaySubscribed = false;
+            }
+            servedSubject = subject;
+            servedHandler = handler;
+        }
+        applyRelaySubscription();
+    }
+
+    /** True while this client answers relay requests (master, connected, handler set). */
+    public boolean isServingRelay() {
+        synchronized (relayLock) {
+            return relaySubscribed;
+        }
+    }
+
+    private void applyRelaySubscription() {
+        synchronized (relayLock) {
+            Dispatcher d = relayDispatcher;
+            if (d == null) {
+                relaySubscribed = false;
+                return;
+            }
+            boolean want = isMaster && servedHandler != null && servedSubject != null;
+            try {
+                if (want && !relaySubscribed) {
+                    d.subscribe(servedSubject, RELAY_QUEUE_GROUP);
+                    relaySubscribed = true;
+                    events.onConnectionEvent("relay_serving", servedSubject);
+                    // tell waiting clients to retry now instead of after their backoff
+                    Connection c = connection;
+                    if (c != null) {
+                        c.publish(onlineSubject(servedSubject), String.valueOf(config.deviceId).getBytes(StandardCharsets.UTF_8));
+                    }
+                } else if (!want && relaySubscribed) {
+                    d.unsubscribe(servedSubject);
+                    relaySubscribed = false;
+                    events.onConnectionEvent("relay_stopped", servedSubject);
+                }
+            } catch (RuntimeException e) {
+                log.append("nats_", "relay subscription change failed: " + e);
+            }
+        }
+    }
+
+    /** Masters announce themselves here when they start answering relay requests. */
+    public static String onlineSubject(String relaySubject) {
+        return relaySubject + ".online";
+    }
+
+    private void startRelayServing(final Connection nc) {
+        Dispatcher d = nc.createDispatcher(msg -> {
+            RequestHandler h = servedHandler;
+            String replyTo = msg.getReplyTo();
+            if (h == null || replyTo == null) return;
+            byte[] reply;
+            try {
+                reply = h.handle(msg.getData());
+            } catch (Throwable t) {
+                log.append("nats_", "relay handler threw: " + t);
+                reply = ("{\"ok\":false,\"error\":\"Master error\"}").getBytes(StandardCharsets.UTF_8);
+            }
+            if (reply == null) return;
+            try {
+                nc.publish(replyTo, reply);
+            } catch (Throwable t) {
+                log.append("nats_", "relay reply failed: " + t);
+            }
+        });
+        String served = servedSubject;
+        if (served != null) {
+            d.subscribe(onlineSubject(served), m -> events.onConnectionEvent("relay_master_online",
+                    new String(m.getData(), StandardCharsets.UTF_8)));
+        }
+        synchronized (relayLock) {
+            relayDispatcher = d;
+            relaySubscribed = false;
+        }
+        applyRelaySubscription();
+    }
+
     // ---- publishing --------------------------------------------------------------------------------
 
     /**
@@ -291,6 +420,7 @@ public final class NatsClient {
         events.onConnectionEvent("role_changed", master ? "master" : "client");
         this.isMaster = master;
         config.isMaster = master;
+        applyRelaySubscription();
         JetStream js = jetStream;
         if (js != null) {
             stopStatusSubscriptions();
@@ -339,6 +469,7 @@ public final class NatsClient {
                 events.onConnectionEvent("connected", String.valueOf(nc.getStatus()));
                 // App messaging first: a print-stream problem below (e.g. consumer bind) must not hold up CartVue.
                 startAppMessaging(nc);
+                startRelayServing(nc);
 
                 JetStream js = nc.jetStream();
                 jetStream = js;
@@ -570,6 +701,10 @@ public final class NatsClient {
     private void closeConnection() {
         jetStream = null;
         appDispatcher = null; // closed with the connection; recreated (with every app subject) on the next connect
+        synchronized (relayLock) {
+            relayDispatcher = null;
+            relaySubscribed = false;
+        }
         Connection c = connection;
         connection = null;
         if (c != null) {

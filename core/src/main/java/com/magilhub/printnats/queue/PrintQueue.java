@@ -53,6 +53,10 @@ public final class PrintQueue {
     private final long watchdogMs;
     private final RetryPolicy kotPolicy;
     private final RetryPolicy receiptPolicy;
+    private volatile RetryPolicy relayPolicy = RetryPolicy.relay();
+    /** Sends relay jobs ({@link PrinterConfig#RELAY_MASTER_ID}) to the master device; null = relay not wired. */
+    private volatile PrinterTransport relayTransport;
+    private static final PrinterConfig RELAY_PRINTER = PrinterConfig.relayMaster();
     private final List<JobListener> listeners = new CopyOnWriteArrayList<>();
 
     private final Map<String, Lane> lanes = new ConcurrentHashMap<>();
@@ -96,6 +100,15 @@ public final class PrintQueue {
         this.resetRetriesOnManualRetry = reset;
     }
 
+    /** Transport for relay jobs (client → master device). Their payload is sent as-is (no rendering). */
+    public void setRelayTransport(PrinterTransport t) {
+        this.relayTransport = t;
+    }
+
+    public void setRelayPolicy(RetryPolicy p) {
+        this.relayPolicy = p;
+    }
+
     public void addListener(JobListener l) {
         listeners.add(l);
     }
@@ -134,9 +147,16 @@ public final class PrintQueue {
         for (PrintJob j : pending) laneFor(j.printerId).offer(j.jobId);
     }
 
-    /** Manual retry from the Failed Print Queue: FAILED → PENDING with a fresh retry budget. */
+    /**
+     * Manual retry from the Failed Print Queue: FAILED → PENDING with a fresh retry budget. A relay job that is
+     * still auto-retrying (PENDING, shown in {@link #failedJobs()}) is attempted again right away.
+     */
     public boolean retry(String jobId) {
         PrintJob j = store.get(jobId);
+        if (j != null && j.status == JobStatus.PENDING && PrinterConfig.isRelay(j.printerId)) {
+            laneFor(j.printerId).offer(j.jobId);
+            return true;
+        }
         if (j == null || j.status != JobStatus.FAILED) return false;
         j.status = JobStatus.PENDING;
         if (resetRetriesOnManualRetry) j.retries = 0;
@@ -162,6 +182,7 @@ public final class PrintQueue {
 
     public int retryAllForPrinter(String printerId) {
         int n = 0;
+        if (PrinterConfig.isRelay(printerId)) return kickRelay();
         for (PrintJob j : store.findByStatus(JobStatus.FAILED)) {
             if (printerId.equals(j.printerId) && retry(j.jobId)) n++;
         }
@@ -208,8 +229,35 @@ public final class PrintQueue {
         return store.get(jobId) != null;
     }
 
+    /**
+     * The Failed Print Queue: FAILED jobs, plus relay jobs still waiting for the master device (PENDING or
+     * IN_PROGRESS after at least one failed attempt — status stays PENDING because they keep auto-retrying;
+     * {@code reason} says why, e.g. "Waiting for master device"). Retry/cancel work on those too.
+     */
     public List<PrintJob> failedJobs() {
-        return store.findByStatus(JobStatus.FAILED);
+        List<PrintJob> out = new ArrayList<>(store.findByStatus(JobStatus.FAILED));
+        for (PrintJob j : store.findByStatus(JobStatus.PENDING, JobStatus.IN_PROGRESS)) {
+            if (PrinterConfig.isRelay(j.printerId) && j.retries > 0) out.add(j);
+        }
+        return out;
+    }
+
+    /**
+     * Attempt every waiting relay job now (NATS (re)connected, master role changed): PENDING ones are offered to the
+     * relay lane, FAILED ones (the master answered with an error) go back to PENDING. Returns the number kicked.
+     */
+    public int kickRelay() {
+        int n = 0;
+        for (PrintJob j : store.findByStatus(JobStatus.PENDING, JobStatus.FAILED)) {
+            if (!PrinterConfig.isRelay(j.printerId)) continue;
+            if (j.status == JobStatus.FAILED) {
+                if (retry(j.jobId)) n++;
+            } else {
+                laneFor(j.printerId).offer(j.jobId);
+                n++;
+            }
+        }
+        return n;
     }
 
     public void shutdown() {
@@ -221,8 +269,12 @@ public final class PrintQueue {
     // ---- lanes -------------------------------------------------------------------------------------
 
     /** One lane (and breaker) per physical printer; unknown printers get their own lane and fail fast. */
+    private PrinterConfig printerFor(String printerId) {
+        return PrinterConfig.isRelay(printerId) ? RELAY_PRINTER : printers.get(printerId);
+    }
+
     private String laneKeyOf(String printerId) {
-        PrinterConfig p = printers.get(printerId);
+        PrinterConfig p = printerFor(printerId);
         return p == null ? "id:" + printerId : p.laneKey();
     }
 
@@ -308,7 +360,8 @@ public final class PrintQueue {
             return; // cancelled, already handled, or claimed elsewhere
         }
         final PrintJob job = store.get(jobId);
-        PrinterConfig found = printers.get(job.printerId);
+        final boolean relay = PrinterConfig.isRelay(job.printerId);
+        PrinterConfig found = printerFor(job.printerId);
         if (found == null) {
             found = printers.replacementFor(job);
             if (found != null) {
@@ -329,20 +382,31 @@ public final class PrintQueue {
             return;
         }
 
-        RenderResult rendered;
-        try {
-            rendered = renderer.render(job, printer, System.currentTimeMillis());
-        } catch (RuntimeException e) {
-            fail(job, new PrintResult(PrintOutcome.FAULT, "Render error: " + e));
+        final PrinterTransport sender = relay ? relayTransport : transport;
+        if (sender == null) {
+            fail(job, new PrintResult(PrintOutcome.FAULT, "Relay to master device not available"));
             return;
         }
-        if (rendered.isSkipped()) {
-            finish(job, JobStatus.SKIPPED, rendered.skipReason, "skipped");
-            return;
+        RenderResult rendered;
+        if (relay) {
+            // the payload IS the relay request; the master renders it for its own printers
+            rendered = RenderResult.bytes(job.payloadJson == null ? new byte[0]
+                    : job.payloadJson.getBytes(java.nio.charset.StandardCharsets.UTF_8), "relay", 1);
+        } else {
+            try {
+                rendered = renderer.render(job, printer, System.currentTimeMillis());
+            } catch (RuntimeException e) {
+                fail(job, new PrintResult(PrintOutcome.FAULT, "Render error: " + e));
+                return;
+            }
+            if (rendered.isSkipped()) {
+                finish(job, JobStatus.SKIPPED, rendered.skipReason, "skipped");
+                return;
+            }
         }
 
         final byte[] bytes = rendered.bytes;
-        final RenderResult paced = rendered.isPaced() && transport instanceof com.magilhub.printnats.spi.PacedTransport ? rendered : null;
+        final RenderResult paced = !relay && rendered.isPaced() && transport instanceof com.magilhub.printnats.spi.PacedTransport ? rendered : null;
         PrintResult result;
         Future<PrintResult> f = sendExecutor.submit(new java.util.concurrent.Callable<PrintResult>() {
             @Override
@@ -350,7 +414,7 @@ public final class PrintQueue {
                 if (paced != null) {
                     return ((com.magilhub.printnats.spi.PacedTransport) transport).sendPaced(printer, bytes, paced.chunkEnds, paced.chunkWaitsMs);
                 }
-                return transport.send(printer, bytes);
+                return sender.send(printer, bytes);
             }
         });
         try {
@@ -367,12 +431,12 @@ public final class PrintQueue {
         }
 
         if (result.outcome == PrintOutcome.SUCCESS) {
-            breaker(printer.laneKey()).record(PrintOutcome.SUCCESS, System.currentTimeMillis());
+            if (!relay) breaker(printer.laneKey()).record(PrintOutcome.SUCCESS, System.currentTimeMillis());
             finish(job, JobStatus.SUCCESS, null, "print completed");
             return;
         }
 
-        RetryPolicy policy = job.kind == JobKind.RECEIPT ? receiptPolicy : kotPolicy;
+        RetryPolicy policy = relay ? relayPolicy : job.kind == JobKind.RECEIPT ? receiptPolicy : kotPolicy;
         if (policy.shouldRetry(job.retries, result.outcome)) {
             final int nextAttempt = job.retries + 1;
             job.retries = nextAttempt;
@@ -394,7 +458,7 @@ public final class PrintQueue {
         }
         // Breaker counts jobs that finally failed to connect (not individual attempts), so one job's own
         // retries keep legacy timing and only the printer's *later* jobs wait out the cooldown.
-        breaker(printer.laneKey()).record(result.outcome, System.currentTimeMillis());
+        if (!relay) breaker(printer.laneKey()).record(result.outcome, System.currentTimeMillis());
         fail(job, result);
     }
 
