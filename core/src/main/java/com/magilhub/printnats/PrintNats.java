@@ -103,7 +103,7 @@ public final class PrintNats {
             public void onConnectionEvent(String type, String detail) {
                 holder.pipeline.onConnectionEvent(type, detail);
             }
-        }, log);
+        }, log, b.outboxStore);
         this.status = new StatusPublisher(nats == null ? new NatsClient(new NatsConfig(), null, log) : nats, lookup, log,
                 b.deviceState, b.session.locationId, b.session.deviceId);
         queue.addListener(status);
@@ -123,11 +123,12 @@ public final class PrintNats {
         final HttpClient http = b.http;
         final LogSink receiptLog = log;
         final Boolean hostDataCap = b.dataCapDevice;
+        final DeviceState deviceState = b.deviceState;
         pipeline.setReceiptServices(new PrintPipeline.ReceiptServicesFactory() {
             @Override
             public com.magilhub.printnats.rules.receipt.ReceiptServices create(Session s, double surcharge) {
                 boolean dataCap = s.isDataCapDevice != null ? s.isDataCapDevice : hostDataCap != null && hostDataCap;
-                return new com.magilhub.printnats.rules.receipt.HttpReceiptServices(http, s, dataCap, surcharge, receiptLog);
+                return new com.magilhub.printnats.rules.receipt.HttpReceiptServices(http, s, dataCap, surcharge, receiptLog, deviceState);
             }
         });
     }
@@ -278,6 +279,13 @@ public final class PrintNats {
         private DeviceState deviceState = DeviceState.ALWAYS_ONLINE;
         private Listener listener;
         private Boolean dataCapDevice;
+        private com.magilhub.printnats.spi.OutboxStore outboxStore;
+
+        /** Durable store for status events that couldn't be published (default: in memory). */
+        public Builder outboxStore(com.magilhub.printnats.spi.OutboxStore s) {
+            this.outboxStore = s;
+            return this;
+        }
 
         /** Platform fact for text-vs-image receipts when the session doesn't set it (Android: brand == "pax"). */
         public Builder dataCapDevice(boolean isDataCap) {

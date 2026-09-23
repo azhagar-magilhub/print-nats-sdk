@@ -181,6 +181,40 @@ public class NatsClientIT {
     }
 
     @Test
+    public void bufferedEventsSurviveARestart() throws Exception {
+        // First "process": offline, buffers one status event into a (shared, i.e. durable) outbox, then dies.
+        InMemoryOutbox durable = new InMemoryOutbox();
+        NatsConfig offline = config(false);
+        offline.serverUrls = "nats://127.0.0.1:1";
+        NatsClient dead = new NatsClient(offline, new NatsEvents() {
+            public void onPrintMessage(InboundMessage m) { }
+            public void onStatusEvent(String s, byte[] d) { }
+            public void onStatusHistoryEvent(String s, byte[] d) { }
+            public void onConnectionEvent(String t, String d) { }
+        }, null, durable);
+        assertFalse(dead.publish("printeventstatus.L1.D1", "from-before-restart".getBytes()));
+        assertEquals(1, durable.size());
+
+        // Second "process" with the same outbox: flushes the backlog on its first connect.
+        be = Nats.connect(server.url());
+        Subscription statuses = be.subscribe("printeventstatus.L1.D1");
+        be.flush(Duration.ofSeconds(2));
+        client = new NatsClient(config(false), new NatsEvents() {
+            public void onPrintMessage(InboundMessage m) { }
+            public void onStatusEvent(String s, byte[] d) { }
+            public void onStatusHistoryEvent(String s, byte[] d) { }
+            public void onConnectionEvent(String t, String d) { connectionEvents.add(t); }
+        }, (f, c) -> logLines.add(f + c), durable);
+        client.start();
+        io.nats.client.Message m = statuses.nextMessage(Duration.ofSeconds(10));
+        assertNotNull("backlog published after restart", m);
+        assertEquals("from-before-restart", new String(m.getData(), StandardCharsets.UTF_8));
+        long deadline = System.currentTimeMillis() + 5_000; // removed right after the confirmed publish
+        while (durable.size() > 0 && System.currentTimeMillis() < deadline) Thread.sleep(20);
+        assertEquals(0, durable.size());
+    }
+
+    @Test
     public void bufferCapDropsOldestAndLogsIt() throws Exception {
         NatsConfig c = config(false);
         c.pendingPublishCap = 2;

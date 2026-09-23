@@ -120,6 +120,7 @@ public final class PrintNatsAndroid {
         return config.toBuilder()
                 .jobStore(db.jobStore())
                 .inboundStore(db.inboundStore())
+                .outboxStore(db.outboxStore())
                 .transport(transport)
                 .starEncoder(new StarIoExtEncoder())
                 .receiptRenderer(receiptRenderer != null ? receiptRenderer

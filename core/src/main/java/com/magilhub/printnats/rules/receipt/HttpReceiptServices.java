@@ -28,9 +28,21 @@ public final class HttpReceiptServices implements ReceiptServices {
     private final boolean dataCapDevice;
     private final double surcharge;
     private final LogSink log;
+    private final com.magilhub.printnats.spi.DeviceState device;
     private static final Map<String, String[]> QR_CACHE = new ConcurrentHashMap<>(); // orderId → {url, expiresAt}
 
     public HttpReceiptServices(HttpClient http, Session session, boolean dataCapDevice, double cardSurcharge, LogSink log) {
+        this(http, session, dataCapDevice, cardSurcharge, log, null);
+    }
+
+    /**
+     * @param device when it reports no network, loyalty/pay-QR calls are skipped immediately instead of waiting for
+     *               HTTP timeouts (offline-mode design, phase 0) — the receipt prints without those blocks, exactly
+     *               as it would after the calls failed.
+     */
+    public HttpReceiptServices(HttpClient http, Session session, boolean dataCapDevice, double cardSurcharge, LogSink log,
+                               com.magilhub.printnats.spi.DeviceState device) {
+        this.device = device;
         this.http = http;
         this.session = session;
         this.dataCapDevice = dataCapDevice;
@@ -41,6 +53,7 @@ public final class HttpReceiptServices implements ReceiptServices {
     @Override
     public JsonObject loyaltyOrderPointReceipt(String orderId) {
         if (session.nestApiBaseUrl == null || session.nestApiBaseUrl.isEmpty()) return null;
+        if (offline()) return null;
         try {
             Map<String, String> h = new LinkedHashMap<>();
             if (session.accessToken != null && !session.accessToken.isEmpty()) h.put("Authorization", "Bearer " + session.accessToken);
@@ -72,6 +85,7 @@ public final class HttpReceiptServices implements ReceiptServices {
             String[] cached = QR_CACHE.get(orderId);
             if (cached != null && usable(cached[1])) return cached[0];
             if (session.merchantBackendUrl == null || session.merchantBackendUrl.isEmpty()) return "";
+            if (offline()) return "";
             JsonObject body = new JsonObject();
             body.addProperty("orderId", orderId);
             body.addProperty("locationId", locationId);
@@ -103,6 +117,14 @@ public final class HttpReceiptServices implements ReceiptServices {
     @Override
     public String imageBaseUrl() {
         return session.imageBaseUrl == null ? "" : session.imageBaseUrl;
+    }
+
+    private boolean offline() {
+        try {
+            return device != null && !device.isNetworkConnected();
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private static String customerAppBase(JsonObject ff) {

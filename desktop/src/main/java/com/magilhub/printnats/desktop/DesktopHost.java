@@ -123,6 +123,7 @@ public final class DesktopHost {
         return c.toBuilder()
                 .jobStore(new FileStores.Jobs(new File(dataDir, "jobs.json")))
                 .inboundStore(new FileStores.Inbound(new File(dataDir, "inbound.json")))
+                .outboxStore(new FileStores.Outbox(new File(dataDir, "outbox.json")))
                 .transport(transport)
                 .starEncoder(new com.magilhub.printnats.render.StarDotImpactEncoder())
                 .log(log)

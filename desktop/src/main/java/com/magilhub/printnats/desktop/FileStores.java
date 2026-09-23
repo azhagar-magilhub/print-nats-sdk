@@ -122,6 +122,72 @@ public final class FileStores {
         }
     }
 
+    // ---- outbox --------------------------------------------------------------------------------------
+
+    public static final class Outbox implements com.magilhub.printnats.spi.OutboxStore {
+        private static final class Row {
+            long id;
+            String subject;
+            String data; // UTF-8 JSON text of the status event
+        }
+
+        private final File file;
+        private final Map<Long, Row> rows = new LinkedHashMap<>();
+        private long nextId = 1;
+
+        public Outbox(File file) {
+            this.file = file;
+            String json = read(file);
+            if (json != null) {
+                List<Row> list = GSON.fromJson(json, new TypeToken<List<Row>>() { }.getType());
+                if (list != null) {
+                    for (Row r : list) {
+                        rows.put(r.id, r);
+                        nextId = Math.max(nextId, r.id + 1);
+                    }
+                }
+            }
+        }
+
+        private void save() {
+            try {
+                atomicWrite(file, GSON.toJson(new ArrayList<>(rows.values())));
+            } catch (IOException e) {
+                throw new IllegalStateException("outbox write failed: " + e.getMessage(), e);
+            }
+        }
+
+        @Override
+        public synchronized void add(String subject, byte[] data) {
+            Row r = new Row();
+            r.id = nextId++;
+            r.subject = subject;
+            r.data = new String(data, StandardCharsets.UTF_8);
+            rows.put(r.id, r);
+            save();
+        }
+
+        @Override
+        public synchronized List<Entry> peek(int max) {
+            List<Entry> out = new ArrayList<>();
+            for (Row r : rows.values()) {
+                if (out.size() >= max) break;
+                out.add(new Entry(r.id, r.subject, r.data.getBytes(StandardCharsets.UTF_8)));
+            }
+            return out;
+        }
+
+        @Override
+        public synchronized void remove(long id) {
+            if (rows.remove(id) != null) save();
+        }
+
+        @Override
+        public synchronized int size() {
+            return rows.size();
+        }
+    }
+
     // ---- inbound -------------------------------------------------------------------------------------
 
     public static final class Inbound implements InboundStore {

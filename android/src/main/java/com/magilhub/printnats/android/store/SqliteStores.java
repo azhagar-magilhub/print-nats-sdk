@@ -22,7 +22,7 @@ import java.util.List;
  */
 public final class SqliteStores extends SQLiteOpenHelper {
     public static final String DB_NAME = "print_nats_sdk.db";
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
 
     public SqliteStores(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, VERSION);
@@ -36,12 +36,18 @@ public final class SqliteStores extends SQLiteOpenHelper {
         db.execSQL("CREATE INDEX jobs_status ON jobs(status)");
         db.execSQL("CREATE TABLE inbound (key TEXT PRIMARY KEY, message_type TEXT, message_data TEXT, message_id TEXT,"
                 + " received_at INTEGER, done INTEGER NOT NULL DEFAULT 0)");
+        createOutbox(db);
+    }
+
+    private static void createOutbox(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, data BLOB NOT NULL)");
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         // One migration per version; never drop data.
         if (oldVersion < 2) db.execSQL("ALTER TABLE jobs ADD COLUMN is_station INTEGER NOT NULL DEFAULT 0");
+        if (oldVersion < 3) createOutbox(db);
     }
 
     public JobStore jobStore() {
@@ -50,6 +56,43 @@ public final class SqliteStores extends SQLiteOpenHelper {
 
     public InboundStore inboundStore() {
         return new Inbound();
+    }
+
+    public com.magilhub.printnats.spi.OutboxStore outboxStore() {
+        return new Outbox();
+    }
+
+    // ---- outbox (unconfirmed status publishes) ---------------------------------------------------------
+
+    private final class Outbox implements com.magilhub.printnats.spi.OutboxStore {
+        @Override
+        public void add(String subject, byte[] data) {
+            ContentValues v = new ContentValues();
+            v.put("subject", subject);
+            v.put("data", data);
+            getWritableDatabase().insert("outbox", null, v);
+        }
+
+        @Override
+        public List<Entry> peek(int max) {
+            List<Entry> out = new ArrayList<>();
+            try (Cursor c = getReadableDatabase().query("outbox", null, null, null, null, null, "id", String.valueOf(max))) {
+                while (c.moveToNext()) out.add(new Entry(c.getLong(0), c.getString(1), c.getBlob(2)));
+            }
+            return out;
+        }
+
+        @Override
+        public void remove(long id) {
+            getWritableDatabase().delete("outbox", "id=?", new String[]{String.valueOf(id)});
+        }
+
+        @Override
+        public int size() {
+            try (Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM outbox", null)) {
+                return c.moveToFirst() ? c.getInt(0) : 0;
+            }
+        }
     }
 
     // ---- jobs ------------------------------------------------------------------------------------------

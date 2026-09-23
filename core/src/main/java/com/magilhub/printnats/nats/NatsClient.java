@@ -4,8 +4,6 @@ import com.magilhub.printnats.spi.LogSink;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.nats.client.Connection;
@@ -61,13 +59,19 @@ public final class NatsClient {
     private JetStreamSubscription statusSub;
     private JetStreamSubscription historySub;
 
-    private final Deque<Object[]> pendingPublishes = new ArrayDeque<>();
+    private final com.magilhub.printnats.spi.OutboxStore outbox;
 
     public NatsClient(NatsConfig config, NatsEvents events, LogSink log) {
+        this(config, events, log, null);
+    }
+
+    /** @param outbox durable store for unconfirmed publishes (null → in-memory, lost on restart) */
+    public NatsClient(NatsConfig config, NatsEvents events, LogSink log, com.magilhub.printnats.spi.OutboxStore outbox) {
         this.config = config;
         this.events = events;
         this.log = log == null ? LogSink.NONE : log;
         this.isMaster = config.isMaster;
+        this.outbox = outbox != null ? outbox : new InMemoryOutbox();
     }
 
     public synchronized void start() {
@@ -116,35 +120,40 @@ public final class NatsClient {
         }
     }
 
+    private final Object outboxLock = new Object();
+
     private void buffer(String subject, byte[] data) {
-        synchronized (pendingPublishes) {
-            if (pendingPublishes.size() >= config.pendingPublishCap) {
-                Object[] dropped = pendingPublishes.pollFirst();
-                if (dropped != null) {
-                    log.append(STATUS_LOG, "DROPPED (buffer full, never published) | " + dropped[0] + " | "
-                            + new String((byte[]) dropped[1], StandardCharsets.UTF_8));
-                }
+        synchronized (outboxLock) {
+            while (outbox.size() >= config.pendingPublishCap) {
+                java.util.List<com.magilhub.printnats.spi.OutboxStore.Entry> oldest = outbox.peek(1);
+                if (oldest.isEmpty()) break;
+                com.magilhub.printnats.spi.OutboxStore.Entry d = oldest.get(0);
+                outbox.remove(d.id);
+                log.append(STATUS_LOG, "DROPPED (buffer full, never published) | " + d.subject + " | "
+                        + new String(d.data, StandardCharsets.UTF_8));
             }
-            pendingPublishes.addLast(new Object[]{subject, data});
+            outbox.add(subject, data);
         }
     }
 
     private void flushPendingPublishes(JetStream js) {
         while (true) {
-            Object[] item;
-            synchronized (pendingPublishes) {
-                item = pendingPublishes.pollFirst();
+            java.util.List<com.magilhub.printnats.spi.OutboxStore.Entry> batch;
+            synchronized (outboxLock) {
+                batch = outbox.peek(20);
             }
-            if (item == null) return;
-            try {
-                js.publish((String) item[0], (byte[]) item[1]);
-                log.append(STATUS_LOG, "PUBLISHED (from reconnect buffer) | " + item[0] + " | "
-                        + new String((byte[]) item[1], StandardCharsets.UTF_8));
-            } catch (Throwable t) {
-                synchronized (pendingPublishes) {
-                    pendingPublishes.addFirst(item);
+            if (batch.isEmpty()) return;
+            for (com.magilhub.printnats.spi.OutboxStore.Entry e : batch) {
+                try {
+                    js.publish(e.subject, e.data);
+                } catch (Throwable t) {
+                    return; // still failing — keep it (oldest first) for the next reconnect instead of spinning
                 }
-                return; // still failing — wait for the next reconnect instead of spinning
+                synchronized (outboxLock) {
+                    outbox.remove(e.id);
+                }
+                log.append(STATUS_LOG, "PUBLISHED (from reconnect buffer) | " + e.subject + " | "
+                        + new String(e.data, StandardCharsets.UTF_8));
             }
         }
     }
@@ -169,9 +178,14 @@ public final class NatsClient {
     }
 
     public int pendingPublishCount() {
-        synchronized (pendingPublishes) {
-            return pendingPublishes.size();
+        synchronized (outboxLock) {
+            return outbox.size();
         }
+    }
+
+    /** Publishes left in the durable outbox from a previous run are flushed on the first connect. */
+    public boolean hasBacklog() {
+        return pendingPublishCount() > 0;
     }
 
     // ---- master role -------------------------------------------------------------------------------
