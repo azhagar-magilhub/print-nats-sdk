@@ -45,6 +45,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class PrintNats {
     public static final String VERSION = "0.1.0-SNAPSHOT";
+    /** Finished jobs are kept for diagnosis this long (legacy log files are kept 3 days too). */
+    static final long FINISHED_JOB_RETENTION_MS = 3L * 24 * 60 * 60 * 1000;
 
     /** Everything a UI may want to observe. All callbacks run on SDK threads. */
     public interface Listener extends JobListener, PrintPipeline.Listener {
@@ -114,6 +116,16 @@ public final class PrintNats {
             }
         }, new Restaurant(b.restaurant), b.session, log, listener);
         holder.pipeline = pipeline;
+        final HttpClient http = b.http;
+        final LogSink receiptLog = log;
+        final Boolean hostDataCap = b.dataCapDevice;
+        pipeline.setReceiptServices(new PrintPipeline.ReceiptServicesFactory() {
+            @Override
+            public com.magilhub.printnats.rules.receipt.ReceiptServices create(Session s, double surcharge) {
+                boolean dataCap = s.isDataCapDevice != null ? s.isDataCapDevice : hostDataCap != null && hostDataCap;
+                return new com.magilhub.printnats.rules.receipt.HttpReceiptServices(http, s, dataCap, surcharge, receiptLog);
+            }
+        });
     }
 
     private static final class PipelineHolder {
@@ -128,6 +140,7 @@ public final class PrintNats {
 
     /** Recover unfinished work, then connect to NATS. */
     public void start() {
+        queue.pruneFinished(System.currentTimeMillis() - FINISHED_JOB_RETENTION_MS);
         queue.recover();
         pipeline.recover();
         if (nats != null) nats.start();
@@ -180,6 +193,16 @@ public final class PrintNats {
         return pipeline.printReceipt(orderDetails);
     }
 
+    /** With the card-processing surcharge the UI holds for this order (Redux cpSurchargeByOrder). */
+    public int printReceipt(JsonObject orderDetails, double cardSurcharge) {
+        return pipeline.printReceipt(orderDetails, cardSurcharge);
+    }
+
+    /** End-of-day report JSON (legacy printEOD). */
+    public int printEod(String eodJson) {
+        return pipeline.printEod(eodJson, false);
+    }
+
     // ---- Failed Print Queue -----------------------------------------------------------------------------
 
     public List<PrintJob> failedJobs() {
@@ -227,6 +250,13 @@ public final class PrintNats {
         private LogSink log = LogSink.NONE;
         private DeviceState deviceState = DeviceState.ALWAYS_ONLINE;
         private Listener listener;
+        private Boolean dataCapDevice;
+
+        /** Platform fact for text-vs-image receipts when the session doesn't set it (Android: brand == "pax"). */
+        public Builder dataCapDevice(boolean isDataCap) {
+            this.dataCapDevice = isDataCap;
+            return this;
+        }
 
         /** null = no NATS (UI-only printing). */
         public Builder nats(NatsConfig c) {

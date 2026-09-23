@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "$id": "https://magilhub.com/schemas/print-nats-config.json",
+  "title": "PrintNatsConfig",
+  "description": "Configuration sent by the host (RN bridge configure(), desktop sidecar POST /v1/configure). Mirrors com.magilhub.printnats.PrintNatsConfig and js/src/types.ts.",
+  "type": "object",
+  "required": ["session", "restaurant", "printers"],
+  "properties": {
+    "nats": {
+      "type": "object",
+      "required": ["serverUrls"],
+      "properties": {
+        "serverUrls": { "type": "string", "description": "Comma-separated NATS URLs, e.g. tls://nats-qa.maghil.com:4222" },
+        "authToken": { "type": "string" },
+        "consumerName": { "type": "string", "description": "Durable consumer on PRINTKOT; defaults to session.deviceId" },
+        "isMaster": { "type": "boolean" },
+        "testMode": { "type": "boolean", "description": "Dev only: self-provision stream + consumer" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": ["apiBaseUrl", "locationId", "deviceId"],
+      "properties": {
+        "apiBaseUrl": { "type": "string" },
+        "accessToken": { "type": "string" },
+        "merchantId": { "type": "string" },
+        "locationId": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "appVersion": { "type": "string" },
+        "buildNumber": { "type": "string" }
+      }
+    },
+    "restaurant": { "type": "object", "description": "restaurantDetails exactly as the merchant API returns it" },
+    "printers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "connection", "address", "purpose"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "connection": { "enum": ["LAN", "USB", "BLUETOOTH", "SERIAL", "WINDOWS_QUEUE"] },
+          "address": { "type": "string" },
+          "port": { "type": "integer", "default": 9100 },
+          "purpose": { "enum": ["RECEIPT", "MASTER_KOT", "STATION_KOT"] },
+          "isStar": { "type": "boolean" },
+          "is58mm": { "type": "boolean" },
+          "utf8": { "type": "boolean" },
+          "modelName": { "type": "string" },
+          "cuisineId": { "type": ["string", "null"] },
+          "stationName": { "type": "string" },
+          "kotSpace": { "type": "integer" }
+        }
+      }
+    },
+    "autoStartOnBoot": { "type": "boolean", "default": false }
+  }
+}

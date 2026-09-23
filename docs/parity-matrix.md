@@ -1,6 +1,10 @@
 # Parity matrix — SDK vs MerchantApp legacy print code
 
-Baseline: MerchantApp `Release-25.1` (HEAD `a8365028e`). Verified by `:parity` tests, which compile the
+Baseline: MerchantApp **`Release-27.4`** (HEAD `ecf6b814c`, 2026-09-23). Work started on `Release-25.1`; the
+checkout moved to 27.4 mid-session and everything was re-checked: KOT templates (PrintUtil/StarPrintUtil) pass
+parity on 27.4, `PrintFrameworkModule` differs only by Toast→uiToast, `useFCMNotificationHandler` 27.4 dropped the
+`sortOrder` override (the port already matches 27.4), receipts are ported from 27.4 (see receipt-port-notes.md).
+Verified by `:parity` tests, which compile the
 **real, unmodified** MerchantApp sources (synced read-only into `parity/build/legacy-src`) and run them
 on the JVM next to the SDK.
 
@@ -18,7 +22,8 @@ JAVA_HOME=~/.jenv/versions/11 ./gradlew :parity:testDebugUnitTest -PmerchantAppD
 | Thermal KOT **T3** (new) | none — "3" fell through to T1 | = legacy T4 with items forced BIG | byte-for-byte vs legacy T4 | ✅ |
 | Star KOT T1–T5 | `StarPrintUtil.printStarKot*` | `StarKotTemplates` (mechanical port) | ICommandBuilder call-for-call | ✅ |
 | Default template (blank `templateNo`) | JS fallback `"1"` | `"3"` | unit | ✅ intentional change |
-| Receipts / EOD (bitmap) | `PrintUtil.printReceiptFromJson`, ReceiptBuilder | Android adapter (phase 1), Java2D (phase 2) | — | ⏳ |
+| Receipt payload (printNetworkReceipt + optimizeReceiptData) | JS (27.4) | `ReceiptPayloadBuilder` | 16 unit tests, values derived from JS | ✅ (see receipt-port-notes.md) |
+| Receipt / EOD rendering | `PrintUtil.getAsyncEscPosPrintReceipt` / `getAsyncEODPrinter` | Android: the same code copied mechanically (`android/legacy`), captured to bytes | by construction; device check pending | ✅ Android / ⏳ desktop (Java2D) |
 
 Fixture matrix: 4 templates × {58 mm, 80 mm} × {take-out master, dine-in station w/ table/guests/batch note/KOT no/buzzer,
 customer + reprint + scheduled + unpaid + customization count, voided + event + order source, online card+cash payment,

@@ -4,7 +4,7 @@ import android.content.Context;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbManager;
 
-import com.magilhub.printnats.android.escpos.UsbConnection;
+import com.magilhub.printnats.android.legacy.escpos.connection.usb.UsbConnection;
 import com.magilhub.printnats.queue.PrintOutcome;
 import com.magilhub.printnats.queue.PrintResult;
 import com.magilhub.printnats.queue.PrinterConfig;

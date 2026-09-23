@@ -196,7 +196,7 @@ public final class PrintPipeline implements NatsEvents {
                     enqueueEditKot(a.order, in.messageId);
                     break;
                 case RECEIPT:
-                    enqueueReceipt(a.order, in.messageId);
+                    enqueueReceipt(a.order, in.messageId, 0);
                     break;
                 case FAILED:
                     publishReprintFailed(md, a.order, a.reason);
@@ -219,7 +219,31 @@ public final class PrintPipeline implements NatsEvents {
     }
 
     public int printReceipt(JsonObject order) {
-        return enqueueReceipt(order, null);
+        return enqueueReceipt(order, null, 0);
+    }
+
+    /** Host-UI receipt with the card-processing surcharge from UI state (Redux cpSurchargeByOrder). */
+    public int printReceipt(JsonObject order, double cardSurcharge) {
+        return enqueueReceipt(order, null, cardSurcharge);
+    }
+
+    /** End-of-day report on the receipt printer (legacy printEOD). {@code itemReport}: JSON is an ItemReport array. */
+    public int printEod(String json, boolean itemReport) {
+        PrinterConfig receiptPrinter = receiptPrinter();
+        if (receiptPrinter == null) {
+            log.append("print_", "Info:: EOD skipped — no receipt printer configured");
+            return 0;
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty(itemReport ? "itemReportsJson" : "eodJson", json);
+        return enqueueOnce(job(UUID.randomUUID() + "|" + receiptPrinter.id, JobKind.EOD, receiptPrinter.id, payload));
+    }
+
+    private PrinterConfig receiptPrinter() {
+        for (PrinterConfig p : printers.all()) {
+            if (p.purpose == PrinterConfig.Purpose.RECEIPT) return p;
+        }
+        return null;
     }
 
     private int enqueueKot(JsonObject order, String tableName, boolean cancelled, String messageId) {
@@ -272,20 +296,39 @@ public final class PrintPipeline implements NatsEvents {
         return n;
     }
 
-    private int enqueueReceipt(JsonObject order, String messageId) {
-        PrinterConfig receiptPrinter = null;
-        for (PrinterConfig p : printers.all()) {
-            if (p.purpose == PrinterConfig.Purpose.RECEIPT) {
-                receiptPrinter = p;
-                break;
-            }
-        }
+    private int enqueueReceipt(JsonObject order, String messageId, double cardSurcharge) {
+        PrinterConfig receiptPrinter = receiptPrinter();
         if (receiptPrinter == null) {
             log.append("print_", "Info:: Receipt skipped — no receipt printer configured, orderNo=" + Json.str(order, "orderNo"));
             return 0;
         }
+        // printReceipt → printNetworkReceipt → optimizeReceiptData (ReceiptPayloadBuilder) → printReceiptJson payload
+        com.magilhub.printnats.rules.ReceiptPayloadBuilder.Result built = new com.magilhub.printnats.rules.ReceiptPayloadBuilder(
+                com.magilhub.printnats.rules.PrintDates.systemDefault()).build(order, restaurant, receiptServices.create(session, cardSurcharge));
+        JsonObject payload = new JsonObject();
+        payload.addProperty("receiptJson", built.json());
+        payload.addProperty("textReceipt", built.textReceipt);
+        Json.copy(order, payload, "orderId");
+        Json.copy(order, payload, "orderNo");
+        Json.copy(order, payload, "messageId");
         String base = messageId != null ? messageId : UUID.randomUUID().toString();
-        return enqueueOnce(job(base + "|" + receiptPrinter.id, JobKind.RECEIPT, receiptPrinter.id, order));
+        return enqueueOnce(job(base + "|" + receiptPrinter.id, JobKind.RECEIPT, receiptPrinter.id, payload));
+    }
+
+    /** Creates the receipt services for a session (lets hosts/tests swap network + device facts). */
+    public interface ReceiptServicesFactory {
+        com.magilhub.printnats.rules.receipt.ReceiptServices create(Session session, double cardSurcharge);
+    }
+
+    private volatile ReceiptServicesFactory receiptServices = new ReceiptServicesFactory() {
+        @Override
+        public com.magilhub.printnats.rules.receipt.ReceiptServices create(Session s, double surcharge) {
+            return com.magilhub.printnats.rules.receipt.ReceiptServices.NONE;
+        }
+    };
+
+    public void setReceiptServices(ReceiptServicesFactory factory) {
+        this.receiptServices = factory;
     }
 
     /** Deterministic job ids make crash-replay idempotent: a job already queued is not queued again. */

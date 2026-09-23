@@ -77,3 +77,12 @@ function row(p: MerchantDevice, kotSpace: number, tagId: string | undefined, sta
     kotSpace,
   };
 }
+
+/**
+ * Master (Expo / Failed-Print-Queue owner) device — MerchantApp isDefaultPrintDevice:
+ * the TAB row for this device with isDefault === 1.
+ */
+export function isMasterDevice(devices: MerchantDevice[] | null | undefined, deviceId: string): boolean {
+  const tab = devices?.find((d) => d.deviceType === 'TAB' && d.deviceIdentifier === deviceId);
+  return tab?.isDefault === 1;
+}

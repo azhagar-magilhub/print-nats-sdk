@@ -6,7 +6,7 @@ import {
 } from './types';
 
 export * from './types';
-export { toPrinterConfigs } from './printers';
+export { toPrinterConfigs, isMasterDevice } from './printers';
 
 interface SidecarInfo {
   port: number;
@@ -80,7 +80,8 @@ export const PrintNats: PrintNatsApi = {
 
   printKot: (order, tableName = null, isOrderCancelled = false) => call<number>('print/kot', { order, tableName, isOrderCancelled }),
   printEditKot: (order) => call<number>('print/edit-kot', { order }),
-  printReceipt: (order) => call<number>('print/receipt', { order }),
+  printReceipt: (order, cardSurcharge = 0) => call<number>('print/receipt', { order, cardSurcharge }),
+  printEod: (eod) => call<number>('print/eod', { eod }),
 
   getFailedJobs: () => call<PrintJob[]>('jobs/failed'),
   retry: (jobId) => call<boolean>('jobs/retry', { jobId }),

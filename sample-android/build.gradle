@@ -1,0 +1,23 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 31
+    defaultConfig {
+        applicationId 'com.magilhub.printnats.sample'
+        minSdkVersion 24
+        targetSdkVersion 31
+        versionCode 1
+        versionName version
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    lintOptions {
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation project(':android')
+}

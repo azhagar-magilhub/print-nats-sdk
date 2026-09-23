@@ -22,6 +22,11 @@ dependencies {
     api project(':core')
     implementation 'com.starmicronics:stario:2.10.1'
     implementation 'com.starmicronics:starioextension:1.15.1'
+    // legacy receipt/EOD renderer (copied PrintUtil): QR codes, Gson/org.json, Room annotations only
+    implementation 'com.google.zxing:core:3.4.1'
+    implementation "com.google.code.gson:gson:$gsonVersion"
+    implementation 'androidx.annotation:annotation:1.3.0'
+    compileOnly 'androidx.room:room-common:2.4.3'
     testImplementation "junit:junit:$junitVersion"
 }
 

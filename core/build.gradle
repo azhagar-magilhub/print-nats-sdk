@@ -15,7 +15,11 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 dependencies {
-    api "io.nats:jnats:$jnatsVersion"
+    // BouncyCastle is only needed for NKey/JWT credentials; hosts use token auth, and AGP 3.5's dexer cannot
+    // process bcprov-lts8on (MerchantApp excludes it for the same reason).
+    api("io.nats:jnats:$jnatsVersion") {
+        exclude group: 'org.bouncycastle'
+    }
     api "com.google.code.gson:gson:$gsonVersion"
     implementation "org.threeten:threetenbp:$threetenbpVersion"
     testImplementation "junit:junit:$junitVersion"

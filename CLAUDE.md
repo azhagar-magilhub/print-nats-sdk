@@ -12,7 +12,11 @@ Java sidecar. Approved plan: `~/.claude/plans/fancy-gathering-donut.md`.
   loads in the oldest host. compileSdk 31, minSdk 24. **No Room** (hosts pin different Room versions).
 - `js/` — `@merchant/print-nats`; `js/android/` holds the RN bridge (compiled inside the host app; RN isn't on Maven).
 - `parity/` — TEST-ONLY. Compiles MerchantApp's real legacy print code (read-only sync into `build/`) and asserts
-  the SDK matches it. See `docs/parity-matrix.md`.
+  the SDK matches it. See `docs/parity-matrix.md`. It syncs WHATEVER branch MerchantApp has checked out — the
+  user switches branches in GitHub Desktop mid-session; baseline is Release-27.4, check `git -C ../MerchantApp branch`.
+- `android/src/main/java/.../android/legacy/` — MerchantApp's PrintUtil + models + DantSu ESC/POS copied
+  mechanically (package rename only) for byte-identical receipt/EOD rendering. Never hand-edit; re-copy.
+- `sample-android/` — manual test bench app (configure, test KOT, watch events).
 
 ## Build
 ```bash
@@ -20,8 +24,9 @@ export JAVA_HOME=~/.jenv/versions/11
 ./gradlew :core:build :android:assembleRelease :parity:testDebugUnitTest
 ```
 
-## Platform caveat
-jnats' API uses `java.time` (e.g. `Duration`): Android hosts below API 26 must enable core library desugaring
+## Platform caveats
+- jnats is declared without BouncyCastle (AGP 3.5's dexer can't process bcprov; token auth only).
+- jnats' API uses `java.time` (e.g. `Duration`): Android hosts below API 26 must enable core library desugaring
 (AGP 4+). maghilOrder's PAX A920 Pro is Android 7.1 (API 25) → enable `coreLibraryDesugaringEnabled` there.
 MerchantApp (AGP 3.5.4, no desugaring) already ships jnats → its devices must be API 26+.
 

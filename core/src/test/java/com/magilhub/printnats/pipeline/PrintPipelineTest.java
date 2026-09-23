@@ -73,7 +73,8 @@ public class PrintPipelineTest {
     public void setUp() {
         final List<PrinterConfig> printers = Arrays.asList(
                 printer("EXPO", PrinterConfig.Purpose.MASTER_KOT, null),
-                printer("BAR", PrinterConfig.Purpose.STATION_KOT, "C-BAR"));
+                printer("BAR", PrinterConfig.Purpose.STATION_KOT, "C-BAR"),
+                printer("RCPT", PrinterConfig.Purpose.RECEIPT, null));
         jobs = new InMemoryJobStore();
         inbound = new InMemoryInboundStore();
         PrintQueue.PrinterLookup byId = id -> {
@@ -167,6 +168,22 @@ public class PrintPipelineTest {
         Thread.sleep(300);
         List<PrintJob> all = jobs.findByStatus(JobStatus.values());
         assertEquals("deterministic job ids → idempotent", 2, all.size());
+    }
+
+    @Test
+    public void receiptMessageQueuesBuiltReceiptOnReceiptPrinter() throws Exception {
+        FakeMessage m = new FakeMessage("R1", "PRINT_RECEIPT", RulesFixtures.messageData("60"));
+        pipeline.onPrintMessage(m);
+        awaitJobs(1);
+        List<PrintJob> done = jobs.findByStatus(JobStatus.SUCCESS);
+        assertEquals(1, done.size());
+        PrintJob j = done.get(0);
+        assertEquals("RCPT", j.printerId);
+        assertEquals(com.magilhub.printnats.queue.JobKind.RECEIPT, j.kind);
+        JsonObject payload = com.magilhub.printnats.rules.Json.parseObject(j.payloadJson);
+        assertTrue("printReceiptJson payload", payload.get("receiptJson").getAsString().contains("\"orderNo\""));
+        assertEquals(false, payload.get("textReceipt").getAsBoolean());
+        assertEquals(Arrays.asList("RCPT"), sent);
     }
 
     @Test

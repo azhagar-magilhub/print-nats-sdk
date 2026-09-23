@@ -3,7 +3,7 @@ package com.magilhub.printnats.android.transport;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 
-import com.magilhub.printnats.android.escpos.BluetoothConnection;
+import com.magilhub.printnats.android.legacy.escpos.connection.bluetooth.BluetoothConnection;
 import com.magilhub.printnats.queue.PrintOutcome;
 import com.magilhub.printnats.queue.PrintResult;
 import com.magilhub.printnats.queue.PrinterConfig;

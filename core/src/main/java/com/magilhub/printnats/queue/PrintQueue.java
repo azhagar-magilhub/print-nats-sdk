@@ -184,6 +184,18 @@ public final class PrintQueue {
         return n;
     }
 
+    /** Delete finished jobs (SUCCESS/SKIPPED/CANCELLED) last updated before {@code cutoffMillis}. FAILED stay. */
+    public int pruneFinished(long cutoffMillis) {
+        int n = 0;
+        for (PrintJob j : store.findByStatus(JobStatus.SUCCESS, JobStatus.SKIPPED, JobStatus.CANCELLED)) {
+            if (j.updatedAt < cutoffMillis) {
+                store.delete(j.jobId);
+                n++;
+            }
+        }
+        return n;
+    }
+
     public boolean exists(String jobId) {
         return store.get(jobId) != null;
     }

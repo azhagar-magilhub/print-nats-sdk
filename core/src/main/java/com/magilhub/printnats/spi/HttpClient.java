@@ -15,4 +15,7 @@ public interface HttpClient {
     }
 
     Response get(String url, Map<String, String> headers) throws Exception;
+
+    /** JSON POST (pay-QR receipt link). */
+    Response post(String url, Map<String, String> headers, String jsonBody) throws Exception;
 }

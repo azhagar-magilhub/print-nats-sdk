@@ -1,0 +1,14 @@
+{
+  "orderId": "SAMPLE-ORD-1",
+  "orderNo": "000123",
+  "orderTypeId": "OT-P",
+  "orderSource": "O",
+  "sortOrder": 1,
+  "kotNo": "0007",
+  "fullName": "Test Customer",
+  "items": [
+    { "id": "I1", "itemName": "Paneer Tikka", "quantity": "2", "categoryName": "Starters", "cuisineId": "C-GRILL", "masterKOT": true, "stationKOT": true,
+      "options": [ { "optionName": "Spice:Medium", "quantity": "1" } ], "comment": "no onion" },
+    { "id": "I2", "itemName": "Mango Lassi", "quantity": "1", "categoryName": "Drinks", "masterKOT": true, "stationKOT": false }
+  ]
+}

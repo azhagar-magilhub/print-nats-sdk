@@ -1,0 +1,122 @@
+// Copied mechanically from MerchantApp (Release-25.1) for byte-identical receipt/EOD rendering.
+// Only package names and R were rewritten — do not hand-edit; re-run the copy instead.
+package com.magilhub.printnats.android.legacy.framework.models;
+
+import com.google.gson.annotations.Expose;
+import com.google.gson.annotations.SerializedName;
+
+public class Orders {
+
+    @SerializedName("DineIn")
+    @Expose
+    OrderDetails dineIn;
+
+    @SerializedName("Take Away")
+    @Expose
+    OrderDetails pickup;
+
+    @SerializedName("Total")
+    @Expose
+    OrderDetails total;
+
+    @SerializedName("Instore")
+    @Expose
+    OrderDetails inStore;
+
+    @SerializedName("Delivery")
+    @Expose
+    OrderDetails delivery;
+
+    @SerializedName("Uber")
+    @Expose
+    OrderDetails uber;
+
+    @SerializedName("UberEats")
+    @Expose
+    OrderDetails uberEats;
+
+    @SerializedName("Doordash")
+    @Expose
+    OrderDetails doorDash;
+
+    @SerializedName("Swiggy")
+    @Expose
+    OrderDetails swiggy;
+
+    @SerializedName("Zomato")
+    @Expose
+    OrderDetails zomato;
+    @SerializedName("Seamless")
+    @Expose
+    OrderDetails seamless;
+    @SerializedName("Zom")
+    @Expose
+    OrderDetails zom;
+    @SerializedName("Grubhub")
+    @Expose
+    OrderDetails grubhub;
+    @SerializedName("Uber eats")
+    @Expose
+    OrderDetails ubereats;
+
+
+    public OrderDetails getDineIn() {
+        return dineIn;
+    }
+
+
+    public OrderDetails getPickup() {
+        return pickup;
+    }
+
+
+    public OrderDetails getTotal() {
+        return total;
+    }
+
+
+    public OrderDetails getInStore() {
+        return inStore;
+    }
+
+
+    public OrderDetails getDelivery() {
+        return delivery;
+    }
+
+    public OrderDetails getUber() {
+        return uber;
+    }
+
+    public OrderDetails getUberEats() {
+        return uberEats;
+    }
+
+    public OrderDetails getDoorDash() {
+        return doorDash;
+    }
+
+    public OrderDetails getSwiggy() {
+        return swiggy;
+    }
+
+    public OrderDetails getZomato() {
+        return zomato;
+    }
+
+    public OrderDetails getSeamless() {
+        return seamless;
+    }
+
+    public OrderDetails getZom() {
+        return zom;
+    }
+
+    public OrderDetails getGrubhub() {
+        return grubhub;
+    }
+
+    public OrderDetails getUbereats() {
+        return ubereats;
+    }
+}

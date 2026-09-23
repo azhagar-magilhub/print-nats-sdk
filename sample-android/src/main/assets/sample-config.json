@@ -1,0 +1,22 @@
+{
+  "nats": { "serverUrls": "nats://10.0.2.2:4222", "testMode": true },
+  "session": {
+    "apiBaseUrl": "http://10.0.2.2:8080/api",
+    "accessToken": "",
+    "locationId": "L1",
+    "deviceId": "SAMPLE-1",
+    "appVersion": "sample"
+  },
+  "restaurant": {
+    "id": "L1",
+    "branchName": "Sample Kitchen",
+    "timeZoneCd": "America/Chicago",
+    "kotFooter": "Thank you!",
+    "uiFeatureFlags": { "showKotNumber": true },
+    "orderTypes": [ { "id": "OT-P", "typeGroup": "P" }, { "id": "OT-D", "typeGroup": "D" } ]
+  },
+  "printers": [
+    { "id": "EXPO", "connection": "LAN", "address": "192.168.1.50", "port": 9100, "purpose": "MASTER_KOT", "stationName": "-" },
+    { "id": "GRILL", "connection": "LAN", "address": "192.168.1.51", "port": 9100, "purpose": "STATION_KOT", "cuisineId": "C-GRILL", "stationName": "Grill" }
+  ]
+}

@@ -158,10 +158,25 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
         }
     }
 
+    /** Receipts call the loyalty / pay-QR APIs, so build them off the bridge thread. */
     @ReactMethod
-    public void printReceipt(String orderJson, Promise promise) {
+    public void printReceipt(final String orderJson, final double cardSurcharge, final Promise promise) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    promise.resolve(sdk().printReceipt(obj(orderJson), cardSurcharge));
+                } catch (Throwable t) {
+                    promise.reject("E_PRINT", t);
+                }
+            }
+        }, "print-nats-receipt").start();
+    }
+
+    @ReactMethod
+    public void printEod(String eodJson, Promise promise) {
         try {
-            promise.resolve(sdk().printReceipt(obj(orderJson)));
+            promise.resolve(sdk().printEod(eodJson));
         } catch (Throwable t) {
             promise.reject("E_PRINT", t);
         }

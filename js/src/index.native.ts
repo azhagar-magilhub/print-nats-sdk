@@ -5,7 +5,7 @@ import {
 } from './types';
 
 export * from './types';
-export { toPrinterConfigs } from './printers';
+export { toPrinterConfigs, isMasterDevice } from './printers';
 
 const Native = NativeModules.PrintNats;
 const emitter = Native ? new NativeEventEmitter(Native) : null;
@@ -45,7 +45,8 @@ export const PrintNats: PrintNatsApi = {
   printKot: (order, tableName = null, isOrderCancelled = false) =>
     requireNative().printKot(JSON.stringify(order), tableName ?? null, isOrderCancelled),
   printEditKot: (order) => requireNative().printEditKot(JSON.stringify(order)),
-  printReceipt: (order) => requireNative().printReceipt(JSON.stringify(order)),
+  printReceipt: (order, cardSurcharge = 0) => requireNative().printReceipt(JSON.stringify(order), cardSurcharge),
+  printEod: (eod) => requireNative().printEod(JSON.stringify(eod)),
 
   async getFailedJobs(): Promise<PrintJob[]> {
     return JSON.parse(await requireNative().getFailedJobs());

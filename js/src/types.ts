@@ -34,6 +34,14 @@ export interface NatsSettings {
 export interface Session {
   apiBaseUrl: string;
   accessToken?: string;
+  /** Config.NEST_ENDPOINT (loyalty point receipt). */
+  nestApiBaseUrl?: string;
+  /** Config.MERCHANT_BACKEND_ENDPOINT (pay-by-link receipt QR). */
+  merchantBackendUrl?: string;
+  /** Config.REACT_APP_IMAGE_URL (receipt logo). */
+  imageBaseUrl?: string;
+  /** Override text-receipt device detection (Android detects PAX itself). */
+  isDataCapDevice?: boolean;
   merchantId?: string;
   locationId: string;
   deviceId: string;
@@ -108,7 +116,10 @@ export interface PrintNatsApi {
   /** Order detail JSON (as fetched by the app). Returns the number of tickets queued. */
   printKot(order: Record<string, unknown>, tableName?: string | null, isOrderCancelled?: boolean): Promise<number>;
   printEditKot(order: Record<string, unknown>): Promise<number>;
-  printReceipt(order: Record<string, unknown>): Promise<number>;
+  /** cardSurcharge: Redux cpSurchargeByOrder[`${orderId}:${splitId||''}`] for this order (0 if none). */
+  printReceipt(order: Record<string, unknown>, cardSurcharge?: number): Promise<number>;
+  /** End-of-day report JSON (legacy PrintFramework.printEOD). */
+  printEod(eodReport: Record<string, unknown>): Promise<number>;
 
   getFailedJobs(): Promise<PrintJob[]>;
   retry(jobId: string): Promise<boolean>;
