@@ -68,7 +68,34 @@ export interface PrintNatsConfig {
    * KOT for the same order + batch instead of printing it twice. Default false.
    */
   suppressNatsKotAfterHostPrint?: boolean;
+  /**
+   * Only the master device prints. On a client, printKot/printEditKot hand the order to the master over NATS
+   * (`printrelay.<locationId>.master`) as a durable relay job (printerId "relay#master", station "Master device"),
+   * retried until the master takes it; while waiting it shows in getFailedJobs() with status PENDING and reason
+   * "Waiting for master device". Default false (MerchantApp).
+   */
+  relayToMaster?: boolean;
 }
+
+export type RelayKind = 'KOT' | 'EDIT_KOT' | 'RECEIPT';
+
+/** Master side: an order a client device relayed, before it is printed. */
+export interface RelayOrderRequest {
+  requestId: string;
+  kind: RelayKind;
+  order: Record<string, unknown>;
+}
+
+/**
+ * Return the order to print (e.g. with the location's next kotNo assigned), or null/undefined to print it as
+ * relayed. Answers after 3 s (or a throw) also print the original.
+ */
+export type RelayOrderHandler = (
+  req: RelayOrderRequest,
+) => Promise<Record<string, unknown> | null | undefined> | Record<string, unknown> | null | undefined;
+
+/** printerId of relay jobs (client → master device). */
+export const RELAY_MASTER_PRINTER_ID = 'relay#master';
 
 export interface PrinterHealth {
   printerId: string;
@@ -163,6 +190,19 @@ export interface PrintNatsApi {
   printEditKot(order: Record<string, unknown>): Promise<number>;
   /** cardSurcharge: Redux cpSurchargeByOrder[`${orderId}:${splitId||''}`] for this order (0 if none). */
   printReceipt(order: Record<string, unknown>, cardSurcharge?: number): Promise<number>;
+  /**
+   * Client without its own receipt printer: ask the master device to print this receipt (one request, not queued).
+   * On the master it prints locally. Resolves the tickets queued, or -1 when no master answered within timeoutMs
+   * (default 8000) — fall back to FCM PRINT_RECEIPT then.
+   */
+  relayReceipt(order: Record<string, unknown>, cardSurcharge?: number, timeoutMs?: number): Promise<number>;
+  /** This device has a receipt printer row (its TAB's receiptPrinterId). */
+  hasReceiptPrinter(): Promise<boolean>;
+  /**
+   * Master side: adjust orders relayed by client devices before printing (assign the KOT number). One handler;
+   * the returned function unregisters it.
+   */
+  onRelayOrder(cb: RelayOrderHandler): Unsubscribe;
   /** End-of-day report JSON (legacy PrintFramework.printEOD). */
   printEod(eodReport: Record<string, unknown>): Promise<number>;
   /** A receipt payload the app already built (legacy PrintFramework.printReceiptJson). */

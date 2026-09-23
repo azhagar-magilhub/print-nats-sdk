@@ -35,6 +35,20 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     static final String EVENT_CONNECTION = "PrintNatsConnectionEvent";
     static final String EVENT_PRINTER_ADDRESS = "PrintNatsPrinterAddressEvent";
     static final String EVENT_APP_MESSAGE = "PrintNatsAppMessage";
+    static final String EVENT_RELAY_ORDER = "PrintNatsRelayOrder";
+    /** How long a relayed order waits for JS (e.g. KOT number assignment) before printing the original. */
+    static final long RELAY_ORDER_TIMEOUT_MS = 3000;
+
+    /** A relayed order waiting for JS's resolveRelayOrder. */
+    private static final class PendingRelayOrder {
+        final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        volatile String orderJson;
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, PendingRelayOrder> pendingRelayOrders =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** JS registered onRelayOrder — without a handler the hook doesn't wait. */
+    private volatile boolean relayOrderHandlerActive;
     private static final Gson GSON = new Gson();
 
     private final ReactApplicationContext context;
@@ -85,6 +99,39 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
                 emit(EVENT_APP_MESSAGE, m);
             }
         });
+        PrintNatsAndroid.setRelayOrderHook(new com.magilhub.printnats.pipeline.RelayOrderHook() {
+            @Override
+            public JsonObject prepare(String kind, JsonObject order) {
+                return prepareRelayOrder(kind, order);
+            }
+        });
+    }
+
+    /** Master: ask JS (onRelayOrder) to adjust a relayed order; null → print the original. Runs on an SDK thread. */
+    private JsonObject prepareRelayOrder(String kind, JsonObject order) {
+        if (!relayOrderHandlerActive || !context.hasActiveCatalystInstance()) return null;
+        String requestId = java.util.UUID.randomUUID().toString();
+        PendingRelayOrder pending = new PendingRelayOrder();
+        pendingRelayOrders.put(requestId, pending);
+        try {
+            WritableMap m = Arguments.createMap();
+            m.putString("requestId", requestId);
+            m.putString("kind", kind);
+            m.putString("order", order.toString());
+            emit(EVENT_RELAY_ORDER, m);
+            if (!pending.done.await(RELAY_ORDER_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) return null;
+            String json = pending.orderJson;
+            if (json == null || json.isEmpty()) return null;
+            com.google.gson.JsonElement e = JsonParser.parseString(json);
+            return e.isJsonObject() ? e.getAsJsonObject() : null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (RuntimeException e) {
+            return null;
+        } finally {
+            pendingRelayOrders.remove(requestId);
+        }
     }
 
     @NonNull
@@ -178,6 +225,45 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
         } catch (Throwable t) {
             promise.reject("E_PRINT", t);
         }
+    }
+
+    /**
+     * Receipt printed by the master device (client without a receipt printer): resolves the tickets the master
+     * queued, or -1 when no master answered within timeoutMs (caller falls back to FCM PRINT_RECEIPT).
+     */
+    @ReactMethod
+    public void relayReceipt(final String orderJson, final double cardSurcharge, final double timeoutMs, final Promise promise) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    promise.resolve(sdk().relayReceipt(obj(orderJson), cardSurcharge, (long) timeoutMs));
+                } catch (Throwable t) {
+                    promise.reject("E_RELAY", t);
+                }
+            }
+        }, "print-nats-relay-receipt").start();
+    }
+
+    @ReactMethod
+    public void hasReceiptPrinter(Promise promise) {
+        PrintNats s = PrintNatsAndroid.get(context);
+        promise.resolve(s != null && s.hasReceiptPrinter());
+    }
+
+    /** JS onRelayOrder registered (true) / removed (false). */
+    @ReactMethod
+    public void setRelayOrderHandlerActive(boolean active) {
+        relayOrderHandlerActive = active;
+    }
+
+    /** JS answer to a PrintNatsRelayOrder event: the order to print (JSON), or null for the original. */
+    @ReactMethod
+    public void resolveRelayOrder(String requestId, String orderJson) {
+        PendingRelayOrder pending = requestId == null ? null : pendingRelayOrders.get(requestId);
+        if (pending == null) return; // timed out already
+        pending.orderJson = orderJson;
+        pending.done.countDown();
     }
 
     @ReactMethod

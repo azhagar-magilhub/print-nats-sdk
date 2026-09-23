@@ -91,6 +91,11 @@ export const PrintNats: PrintNatsApi = {
   printKot: (order, tableName = null, isOrderCancelled = false) => call<number>('print/kot', { order, tableName, isOrderCancelled }),
   printEditKot: (order) => call<number>('print/edit-kot', { order }),
   printReceipt: (order, cardSurcharge = 0) => call<number>('print/receipt', { order, cardSurcharge }),
+  relayReceipt: (order, cardSurcharge = 0, timeoutMs = 8000) =>
+    call<number>('print/relay-receipt', { order, cardSurcharge, timeoutMs }),
+  hasReceiptPrinter: () => call<boolean>('printers/has-receipt'),
+  // Desktop phase 2: relayed orders print as received (no JS hook over the sidecar yet).
+  onRelayOrder: () => () => undefined,
   printEod: (eod) => call<number>('print/eod', { eod }),
   printReceiptJson: (receiptJson, textReceipt = false) => call<number>('print/receipt-json', { receiptJson, textReceipt }),
 

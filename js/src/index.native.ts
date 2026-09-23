@@ -1,7 +1,8 @@
 // React Native (Android): bridge to com.magilhub.printnats.rn.PrintNatsModule.
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import {
-  AppMessage, ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
+  AppMessage, ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig,
+  RelayOrderHandler, Session, StatusEvent, Unsubscribe,
 } from './types';
 
 export * from './types';
@@ -50,6 +51,27 @@ export const PrintNats: PrintNatsApi = {
     requireNative().printKot(JSON.stringify(order), tableName ?? null, isOrderCancelled),
   printEditKot: (order) => requireNative().printEditKot(JSON.stringify(order)),
   printReceipt: (order, cardSurcharge = 0) => requireNative().printReceipt(JSON.stringify(order), cardSurcharge),
+  relayReceipt: (order, cardSurcharge = 0, timeoutMs = 8000) =>
+    requireNative().relayReceipt(JSON.stringify(order), cardSurcharge, timeoutMs),
+  hasReceiptPrinter: () => requireNative().hasReceiptPrinter(),
+  onRelayOrder(cb: RelayOrderHandler): Unsubscribe {
+    if (!emitter || !Native) return () => undefined;
+    const sub = emitter.addListener('PrintNatsRelayOrder', async (raw: any) => {
+      let result: string | null = null;
+      try {
+        const order = await cb({ requestId: raw.requestId, kind: raw.kind, order: JSON.parse(raw.order) });
+        result = order ? JSON.stringify(order) : null;
+      } catch {
+        result = null; // print the order as relayed
+      }
+      Native.resolveRelayOrder(raw.requestId, result);
+    });
+    Native.setRelayOrderHandlerActive?.(true);
+    return () => {
+      sub.remove();
+      Native.setRelayOrderHandlerActive?.(false);
+    };
+  },
   printEod: (eod) => requireNative().printEod(JSON.stringify(eod)),
   printReceiptJson: (receiptJson, textReceipt = false) => requireNative().printReceiptJson(receiptJson, textReceipt),
 

@@ -26,6 +26,7 @@ public final class PrintNatsAndroid {
     private static PrintNats instance;
     private static PrintNats.Listener listener;
     private static ReceiptRenderer receiptRenderer;
+    private static com.magilhub.printnats.pipeline.RelayOrderHook relayOrderHook;
     /** App (core NATS) subjects the host subscribed to — re-applied to every rebuilt instance (configure / restart). */
     private static final java.util.Set<String> appSubjects = new java.util.LinkedHashSet<>();
 
@@ -47,6 +48,12 @@ public final class PrintNatsAndroid {
     /** Optional UI listener (RN bridge). Applied on the next (re)build. */
     public static synchronized void setListener(PrintNats.Listener l) {
         listener = l;
+    }
+
+    /** Master-side hook for orders relayed by client devices (RN bridge). Applied now and on every (re)build. */
+    public static synchronized void setRelayOrderHook(com.magilhub.printnats.pipeline.RelayOrderHook hook) {
+        relayOrderHook = hook;
+        if (instance != null) instance.setRelayOrderHook(hook);
     }
 
     /** Receipt/EOD renderer (bitmap receipts). Applied on the next (re)build. */
@@ -145,6 +152,7 @@ public final class PrintNatsAndroid {
                 .dataCapDevice("pax".equalsIgnoreCase(android.os.Build.BRAND)) // JS isDataCapDevice()
                 .log(log)
                 .listener(listener)
+                .relayOrderHook(relayOrderHook)
                 .onPrinterAddressChanged(new com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener() {
                     @Override
                     public void onPrinterAddressChanged(java.util.List<String> ids, String oldAddress, String newAddress) {

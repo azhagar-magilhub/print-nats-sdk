@@ -247,6 +247,14 @@ public final class LocalServer {
                 double surcharge = o.has("cardSurcharge") ? o.get("cardSurcharge").getAsDouble() : 0;
                 return host.sdk().printReceipt(o.getAsJsonObject("order"), surcharge);
             }
+            case "print/relay-receipt": {
+                JsonObject o = json.getAsJsonObject();
+                double surcharge = o.has("cardSurcharge") ? o.get("cardSurcharge").getAsDouble() : 0;
+                long timeout = o.has("timeoutMs") ? o.get("timeoutMs").getAsLong() : 8000;
+                return host.sdk().relayReceipt(o.getAsJsonObject("order"), surcharge, timeout);
+            }
+            case "printers/has-receipt":
+                return host.isRunning() && host.sdk().hasReceiptPrinter();
             case "print/receipt-json": {
                 JsonObject o = json.getAsJsonObject();
                 return host.sdk().printReceiptJson(o.get("receiptJson").getAsString(),
