@@ -1,0 +1,191 @@
+package com.magilhub.printnats.model;
+
+
+import com.google.gson.Gson;
+import com.google.gson.annotations.Expose;
+import com.google.gson.annotations.SerializedName;
+
+public class PaymentStatus {
+    @SerializedName("amountTendered")
+    @Expose
+    private Double amountTendered;
+
+    @SerializedName("authorizationCode")
+    @Expose
+    private Object authorizationCode;
+
+    @SerializedName("createdTime")
+    @Expose
+    private String createdTime;
+
+    @SerializedName("id")
+    @Expose
+    private String id;
+
+    @SerializedName("locationId")
+    @Expose
+    private String locationId;
+
+    @SerializedName("message")
+    @Expose
+    private String message;
+
+    @SerializedName("modifiedTime")
+    @Expose
+    private String modifiedTime;
+
+    @SerializedName("orderId")
+    @Expose
+    private String orderId;
+
+    @SerializedName("paymentProviderId")
+    @Expose
+    private String paymentProviderId;
+
+    @SerializedName("request")
+    @Expose
+    private String request;
+
+    @SerializedName("response")
+    @Expose
+    private String response;
+
+    @SerializedName("statusCode")
+    @Expose
+    private String statusCode;
+
+    @SerializedName("tenderType")
+    @Expose
+    private String tenderType;
+
+    @SerializedName("transactionAmount")
+    @Expose
+    private Double transactionAmount;
+
+    @SerializedName("transactionType")
+    @Expose
+    private Object transactionType;
+
+    public Double getAmountTendered() {
+        return amountTendered;
+    }
+
+    public void setAmountTendered(Double amountTendered) {
+        this.amountTendered = amountTendered;
+    }
+
+    public Object getAuthorizationCode() {
+        return authorizationCode;
+    }
+
+    public void setAuthorizationCode(Object authorizationCode) {
+        this.authorizationCode = authorizationCode;
+    }
+
+    public String getCreatedTime() {
+        return createdTime;
+    }
+
+    public void setCreatedTime(String createdTime) {
+        this.createdTime = createdTime;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public String getLocationId() {
+        return locationId;
+    }
+
+    public void setLocationId(String locationId) {
+        this.locationId = locationId;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public String getModifiedTime() {
+        return modifiedTime;
+    }
+
+    public void setModifiedTime(String modifiedTime) {
+        this.modifiedTime = modifiedTime;
+    }
+
+    public String getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(String orderId) {
+        this.orderId = orderId;
+    }
+
+    public String getPaymentProviderId() {
+        return paymentProviderId;
+    }
+
+    public void setPaymentProviderId(String paymentProviderId) {
+        this.paymentProviderId = paymentProviderId;
+    }
+
+    public Request getRequest() {
+        // (android Log removed in core) "TAG", "getRequest: request"+request
+        Request requestObj =new Gson().fromJson(request,Request.class);
+        return requestObj;
+    }
+
+    public void setRequest(String request) {
+        this.request = request;
+    }
+
+    public Response getResponse() {
+        Response res = new Gson().fromJson(response,Response.class);
+        return res;
+    }
+
+    public void setResponse(String response) {
+        this.response = response;
+    }
+
+    public String getStatusCode() {
+        return statusCode;
+    }
+
+    public void setStatusCode(String statusCode) {
+        this.statusCode = statusCode;
+    }
+
+    public String getTenderType() {
+        return tenderType;
+    }
+
+    public void setTenderType(String tenderType) {
+        this.tenderType = tenderType;
+    }
+
+    public Double getTransactionAmount() {
+        return transactionAmount;
+    }
+
+    public void setTransactionAmount(Double transactionAmount) {
+        this.transactionAmount = transactionAmount;
+    }
+
+    public Object getTransactionType() {
+        return transactionType;
+    }
+
+    public void setTransactionType(Object transactionType) {
+        this.transactionType = transactionType;
+    }
+}

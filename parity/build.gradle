@@ -1,0 +1,63 @@
+// TEST-ONLY module (never published). Runs MerchantApp's real, unmodified legacy print code
+// on the JVM next to the SDK renderers and asserts byte-identical output.
+//
+// Legacy sources are synced read-only from the MerchantApp checkout into build/ at test time,
+// so parity always tracks whatever MerchantApp branch is checked out. Override the location with
+//   ./gradlew :parity:test -PmerchantAppDir=/path/to/MerchantApp
+apply plugin: 'com.android.library'
+
+def merchantAppDir = file(project.findProperty('merchantAppDir') ?: "${rootDir}/../MerchantApp")
+def appSrc = new File(merchantAppDir, 'android/app/src/main/java/com/magilhub.merchantapp')
+def escposSrc = new File(merchantAppDir, 'android/escposprinter/src/main/java')
+def legacyDir = file("$buildDir/legacy-src")
+
+task syncLegacySources(type: Sync) {
+    into legacyDir
+    from(escposSrc)
+    from(appSrc) {
+        include 'framework/models/**', 'framework/pojo/**', 'framework/utility/Table.java',
+                'framework/utility/Utils.java', 'framework/utility/drawreceipt/**',
+                'framework/async/AsyncEscPosPrinter.java', 'framework/db/entity/PrintEntity.java',
+                'framework/ConnectionUtils/PrintUtil.java', 'framework/ConnectionUtils/StarPrintUtil.java', 'logging/LogFileAppender.java'
+        into 'com/magilhub/merchantapp'
+    }
+    doFirst {
+        if (!appSrc.isDirectory()) throw new GradleException("MerchantApp sources not found at $appSrc (set -PmerchantAppDir)")
+    }
+}
+
+android {
+    compileSdkVersion 31
+    defaultConfig {
+        minSdkVersion 24
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    sourceSets {
+        test.java.srcDirs += legacyDir
+    }
+    testOptions {
+        // android.* calls in legacy code (Log, Context, org.json) return defaults instead of throwing.
+        unitTests.returnDefaultValues = true
+    }
+}
+
+tasks.whenTaskAdded { t ->
+    if (t.name == 'compileDebugUnitTestJavaWithJavac' || t.name == 'compileReleaseUnitTestJavaWithJavac') {
+        t.dependsOn syncLegacySources
+    }
+}
+
+dependencies {
+    testImplementation project(':core')
+    testImplementation "junit:junit:$junitVersion"
+    testImplementation "com.google.code.gson:gson:$gsonVersion"
+    testImplementation 'com.google.zxing:core:3.4.1'
+    testImplementation 'androidx.room:room-common:2.4.3'
+    testImplementation 'androidx.annotation:annotation:1.3.0'
+    testImplementation 'org.json:json:20231013'
+    testImplementation 'com.starmicronics:stario:2.10.1'
+    testImplementation 'com.starmicronics:starioextension:1.15.1'
+}

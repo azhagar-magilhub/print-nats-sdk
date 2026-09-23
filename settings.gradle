@@ -1,0 +1,4 @@
+rootProject.name = 'print-nats-sdk'
+include ':core'
+include ':android'
+include ':parity'

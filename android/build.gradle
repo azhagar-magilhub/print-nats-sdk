@@ -1,0 +1,26 @@
+apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
+
+// Must stay loadable by MerchantApp: AGP 3.5.4, compileSdk 31, minSdk 24, Java 8.
+android {
+    compileSdkVersion 31
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 31
+        versionName version
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    lintOptions {
+        abortOnError false
+    }
+}
+
+dependencies {
+    api project(':core')
+    implementation 'com.starmicronics:stario:2.10.1'
+    implementation 'com.starmicronics:starioextension:1.15.1'
+    testImplementation "junit:junit:$junitVersion"
+}

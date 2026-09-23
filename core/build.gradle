@@ -1,0 +1,31 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+// Core must run on Java 8 (Windows XP desktop) and on Android minSdk 24.
+// --release 8 makes javac reject any post-Java-8 API, not just newer syntax.
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    if (JavaVersion.current().isJava9Compatible()) {
+        options.compilerArgs.addAll(['--release', '8'])
+    }
+}
+
+dependencies {
+    api "io.nats:jnats:$jnatsVersion"
+    api "com.google.code.gson:gson:$gsonVersion"
+    implementation "org.threeten:threetenbp:$threetenbpVersion"
+    testImplementation "junit:junit:$junitVersion"
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'print-nats-core'
+            from components.java
+        }
+    }
+}

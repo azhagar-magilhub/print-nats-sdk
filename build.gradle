@@ -1,0 +1,27 @@
+// Toolchain deliberately matches MerchantApp (Gradle 6.9 + AGP 3.5.4) so the
+// :android AAR is guaranteed to load in the host app's build. Build with JDK 11.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:3.5.4'
+    }
+}
+
+allprojects {
+    group = 'com.magilhub'
+    version = '0.1.0-SNAPSHOT'
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+ext {
+    jnatsVersion = '2.26.2'
+    gsonVersion = '2.8.9'
+    threetenbpVersion = '1.6.8'
+    junitVersion = '4.13.2'
+}
