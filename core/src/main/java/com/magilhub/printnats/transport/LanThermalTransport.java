@@ -25,6 +25,8 @@ import java.net.Socket;
 public final class LanThermalTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe {
     static final int ACK_POLL_MAX_ATTEMPTS = 30;
     static final long ACK_POLL_INTERVAL_MS = 1000;
+    static final long RECONNECT_PAUSE_MS = 250;
+    static final int RECONNECT_TIMEOUT_MS = 2000;
 
     public interface StatusProbe {
         ThermalPrinterStatus query(String ip, int port);
@@ -86,8 +88,25 @@ public final class LanThermalTransport implements PrinterTransport, com.magilhub
         try {
             try {
                 socket.connect(new InetSocketAddress(InetAddress.getByName(ip), port), connectTimeoutMs);
-            } catch (IOException e) {
-                return new PrintResult(PrintOutcome.CONNECTION_FAILED, "Unable to connect to printer while preparing the print job.");
+            } catch (IOException first) {
+                // Legacy gave up after 300 ms. Right after the DLE EOT status connection a single-connection printer
+                // (or a Wi-Fi one waking up) often needs longer, so the job failed as "offline" with the printer fine
+                // and then waited for a retry. One more connect with a longer timeout — nothing was sent yet, so this
+                // can't double-print.
+                try {
+                    socket.close();
+                } catch (IOException ignored) {
+                    // replaced below
+                }
+                socket = new Socket();
+                try {
+                    Thread.sleep(RECONNECT_PAUSE_MS);
+                    socket.connect(new InetSocketAddress(InetAddress.getByName(ip), port), RECONNECT_TIMEOUT_MS);
+                    log.append("print_", "Info:: Thermal connect needed a second attempt: " + ip + " (" + first.getMessage() + ")");
+                } catch (IOException | InterruptedException e) {
+                    if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                    return new PrintResult(PrintOutcome.CONNECTION_FAILED, "Unable to connect to printer while preparing the print job.");
+                }
             }
             try {
                 OutputStream out = socket.getOutputStream();

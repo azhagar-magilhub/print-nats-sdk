@@ -35,6 +35,14 @@ public final class PrintQueue {
 
     public interface PrinterLookup {
         PrinterConfig get(String printerId);
+
+        /**
+         * The job's printer row no longer exists (printers were reconfigured after it was queued): the row that now
+         * does the same job, or null. Default: none.
+         */
+        default PrinterConfig replacementFor(PrintJob job) {
+            return null;
+        }
     }
 
     private final JobStore store;
@@ -300,7 +308,22 @@ public final class PrintQueue {
             return; // cancelled, already handled, or claimed elsewhere
         }
         final PrintJob job = store.get(jobId);
-        final PrinterConfig printer = printers.get(job.printerId);
+        PrinterConfig found = printers.get(job.printerId);
+        if (found == null) {
+            found = printers.replacementFor(job);
+            if (found != null) {
+                log.append("print_", "Info:: Printer " + job.printerId + " no longer configured — job " + job.jobId
+                        + " re-routed to " + found.id + " (" + found.resolvedStationName() + ")");
+                job.printerId = found.id;
+                job.status = JobStatus.PENDING;
+                job.updatedAt = System.currentTimeMillis();
+                store.update(job);
+                // print from the replacement printer's own lane (one ticket at a time per physical printer)
+                laneFor(job.printerId).offer(job.jobId);
+                return;
+            }
+        }
+        final PrinterConfig printer = found;
         if (printer == null) {
             fail(job, new PrintResult(PrintOutcome.FAULT, "Printer not found (id=" + job.printerId + ")"));
             return;

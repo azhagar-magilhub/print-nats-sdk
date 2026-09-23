@@ -85,6 +85,24 @@ public final class PrintNats {
                 for (PrinterConfig p : printerList) if (p.id.equals(printerId)) return p;
                 return null;
             }
+
+            /** Same role on the current printer list: receipt → receipt printer, Expo → master, station → same tag. */
+            @Override
+            public PrinterConfig replacementFor(PrintJob job) {
+                if (job.kind != com.magilhub.printnats.queue.JobKind.KOT) {
+                    for (PrinterConfig p : printerList) if (p.purpose == PrinterConfig.Purpose.RECEIPT) return p;
+                    return null;
+                }
+                if (!job.isStation) {
+                    for (PrinterConfig p : printerList) if (p.purpose == PrinterConfig.Purpose.MASTER_KOT) return p;
+                    return null;
+                }
+                int hash = job.printerId == null ? -1 : job.printerId.lastIndexOf('#');
+                String tag = hash < 0 ? null : job.printerId.substring(hash + 1);
+                if (tag == null || tag.isEmpty()) return null;
+                for (PrinterConfig p : printerList) if (tag.equals(p.cuisineId)) return p;
+                return null;
+            }
         };
         TicketRenderer renderer = new DefaultTicketRenderer(b.starEncoder, b.receiptRenderer, log);
         this.transport = b.transport;
