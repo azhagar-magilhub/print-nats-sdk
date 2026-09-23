@@ -93,6 +93,13 @@ export const PrintNats: PrintNatsApi = {
   printReceipt: (order, cardSurcharge = 0) => call<number>('print/receipt', { order, cardSurcharge }),
   printEod: (eod) => call<number>('print/eod', { eod }),
 
+  openCashDrawer: () => call<{ ok: boolean; message?: string | null }>('drawer/open'),
+  printerStatus: (printerId) => call('printers/status', { printerId }),
+  printerStatuses: () => call('printers/status', {}),
+  wakePrinters: async () => {
+    await call('printers/wake');
+  },
+
   getFailedJobs: () => call<PrintJob[]>('jobs/failed'),
   retry: (jobId) => call<boolean>('jobs/retry', { jobId }),
   cancel: (jobId, staffName = 'staff') => call<boolean>('jobs/cancel', { jobId, staffName }),

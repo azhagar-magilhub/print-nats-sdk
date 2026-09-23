@@ -242,6 +242,20 @@ public final class LocalServer {
                 return host.sdk().retryAllForPrinter(json.getAsJsonObject().get("printerId").getAsString());
             case "jobs/cancel-printer":
                 return host.sdk().cancelAllForPrinter(json.getAsJsonObject().get("printerId").getAsString(), str(json, "staffName"));
+            case "drawer/open": {
+                com.magilhub.printnats.queue.PrintResult r = host.sdk().openCashDrawer();
+                JsonObject o = new JsonObject();
+                o.addProperty("ok", r.outcome == com.magilhub.printnats.queue.PrintOutcome.SUCCESS);
+                o.addProperty("message", r.message);
+                return o;
+            }
+            case "printers/status": {
+                JsonElement id = json.getAsJsonObject().get("printerId");
+                return id == null || id.isJsonNull() ? host.sdk().printerStatuses() : host.sdk().printerStatus(id.getAsString());
+            }
+            case "printers/wake":
+                host.sdk().wakePrinters();
+                return true;
             case "printers/installed":
                 return WindowsQueueTransport.installedPrinters();
             default:

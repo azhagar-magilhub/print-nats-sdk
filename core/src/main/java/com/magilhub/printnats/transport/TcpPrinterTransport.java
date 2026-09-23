@@ -16,7 +16,7 @@ import java.net.Socket;
  * retry); failure after connecting → AMBIGUOUS (bytes may have printed). Status back-channel (DLE EOT) is left
  * to platform transports that need it.
  */
-public final class TcpPrinterTransport implements PrinterTransport {
+public final class TcpPrinterTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe {
     private final int connectTimeoutMs;
     private final int writeTimeoutMs;
 
@@ -29,9 +29,30 @@ public final class TcpPrinterTransport implements PrinterTransport {
         this(3000, 10000);
     }
 
+    /** Reachability only (plain TCP printers report no status here). */
+    @Override
+    public com.magilhub.printnats.queue.PrinterHealth probe(PrinterConfig printer) {
+        String host = printer.address == null ? "" : printer.address.replaceFirst("^TCP:", "").split("\\|")[0].trim();
+        Socket socket = new Socket();
+        try {
+            socket.connect(new InetSocketAddress(host, printer.port), connectTimeoutMs);
+            com.magilhub.printnats.queue.PrinterHealth h = com.magilhub.printnats.queue.PrinterHealth.of(printer.id, true, true, null);
+            h.statusSupported = false;
+            return h;
+        } catch (IOException e) {
+            return com.magilhub.printnats.queue.PrinterHealth.of(printer.id, false, false, "Printer is Offline / Unreachable");
+        } finally {
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+                // closing anyway
+            }
+        }
+    }
+
     @Override
     public PrintResult send(PrinterConfig printer, byte[] data) {
-        String host = printer.address == null ? "" : printer.address.split("\\|")[0].trim();
+        String host = printer.address == null ? "" : printer.address.replaceFirst("^TCP:", "").split("\\|")[0].trim();
         Socket socket = new Socket();
         try {
             try {

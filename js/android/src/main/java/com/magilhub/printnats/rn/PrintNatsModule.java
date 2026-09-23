@@ -194,6 +194,47 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
         }
     }
 
+    // ---- cash drawer / printer health ---------------------------------------------------------------
+
+    /** Resolves {ok, message} — legacy PrintFramework.openCashDrawer, but awaitable. */
+    @ReactMethod
+    public void openCashDrawer(final Promise promise) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    com.magilhub.printnats.queue.PrintResult r = sdk().openCashDrawer();
+                    WritableMap m = Arguments.createMap();
+                    m.putBoolean("ok", r.outcome == com.magilhub.printnats.queue.PrintOutcome.SUCCESS);
+                    m.putString("message", r.message);
+                    promise.resolve(m);
+                } catch (Throwable t) {
+                    promise.reject("E_DRAWER", t);
+                }
+            }
+        }, "print-nats-drawer").start();
+    }
+
+    /** printerId null → every printer row. Resolves a JSON string (PrinterHealth or PrinterHealth[]). */
+    @ReactMethod
+    public void printerStatus(final String printerId, final Promise promise) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    promise.resolve(GSON.toJson(printerId == null ? sdk().printerStatuses() : sdk().printerStatus(printerId)));
+                } catch (Throwable t) {
+                    promise.reject("E_STATUS", t);
+                }
+            }
+        }, "print-nats-status").start();
+    }
+
+    @ReactMethod
+    public void wakePrinters() {
+        sdk().wakePrinters();
+    }
+
     // ---- Failed Print Queue -------------------------------------------------------------------------
 
     @ReactMethod

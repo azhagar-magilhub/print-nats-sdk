@@ -21,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * size-scaled ACK timeout, and a status-poll fallback for printers that never answer endCheckedBlock.
  * The SDK queue already serialises per physical printer, so no per-port executor here.
  */
-public final class StarTransport implements PrinterTransport {
+public final class StarTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe {
     private static final int MAX_PRINT_BYTES = 150_000;
     private static final int TIMEOUT_FLOOR_MS = 15_000;
     private static final int TIMEOUT_CEILING_MS = 120_000;
@@ -53,6 +53,27 @@ public final class StarTransport implements PrinterTransport {
                 return "USB:" + address;
             default:
                 return "TCP:" + address;
+        }
+    }
+
+    @Override
+    public com.magilhub.printnats.queue.PrinterHealth probe(PrinterConfig printer) {
+        StarIOPort port = null;
+        try {
+            port = StarIOPort.getPort(portName(printer), "", 10_000, context);
+            StarPrinterStatus s = port.retreiveStatus();
+            boolean ok = isAcknowledged(s);
+            return com.magilhub.printnats.queue.PrinterHealth.of(printer.id, true, ok, ok ? null : resolvePrinterError(s));
+        } catch (Exception e) {
+            return com.magilhub.printnats.queue.PrinterHealth.of(printer.id, false, false, "Printer is offline or unreachable. Check power and LAN/Wi-Fi.");
+        } finally {
+            if (port != null) {
+                try {
+                    StarIOPort.releasePort(port);
+                } catch (Exception ignored) {
+                    // released anyway
+                }
+            }
         }
     }
 

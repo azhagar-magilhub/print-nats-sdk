@@ -22,7 +22,7 @@ import java.net.Socket;
  *       job, a clean status or an inconclusive result (no DLE EOT support / unreachable) is success.</li>
  * </ol>
  */
-public final class LanThermalTransport implements PrinterTransport {
+public final class LanThermalTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe {
     static final int ACK_POLL_MAX_ATTEMPTS = 30;
     static final long ACK_POLL_INTERVAL_MS = 1000;
 
@@ -51,6 +51,21 @@ public final class LanThermalTransport implements PrinterTransport {
         this.probe = probe;
         this.ackAttempts = ackAttempts;
         this.ackIntervalMs = ackIntervalMs;
+    }
+
+    /** DLE EOT status query (also the legacy wakeConfiguredPrinters "ping"). */
+    @Override
+    public com.magilhub.printnats.queue.PrinterHealth probe(PrinterConfig printer) {
+        String ip = printer.address == null ? "" : printer.address.split("\\|")[0].trim();
+        ThermalPrinterStatus s = probe.query(ip, printer.port);
+        if (s.unreachable) return com.magilhub.printnats.queue.PrinterHealth.of(printer.id, false, false, s.userMessage());
+        if (s.statusQueryUnsupported) {
+            com.magilhub.printnats.queue.PrinterHealth h = com.magilhub.printnats.queue.PrinterHealth.of(printer.id, true, true, null);
+            h.statusSupported = false;
+            return h;
+        }
+        boolean blocked = s.hasBlocker();
+        return com.magilhub.printnats.queue.PrinterHealth.of(printer.id, true, !blocked, blocked ? s.userMessage() : null);
     }
 
     @Override

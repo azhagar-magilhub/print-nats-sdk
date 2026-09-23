@@ -15,11 +15,25 @@ import com.magilhub.printnats.spi.PrinterTransport;
  * already be granted from the UI (a background service cannot show the dialog); messages match legacy
  * PrintFrameworkModule/USBUtil so the Failed Print Queue categorises them the same way.
  */
-public final class UsbThermalTransport implements PrinterTransport {
+public final class UsbThermalTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe {
     private final Context context;
 
     public UsbThermalTransport(Context context) {
         this.context = context.getApplicationContext();
+    }
+
+    /** Presence + permission only (USB thermal printers give no status back on this path). */
+    @Override
+    public com.magilhub.printnats.queue.PrinterHealth probe(PrinterConfig printer) {
+        UsbManager usb = (UsbManager) context.getSystemService(Context.USB_SERVICE);
+        UsbDevice device = find(usb, printer.address);
+        if (device == null) return com.magilhub.printnats.queue.PrinterHealth.of(printer.id, false, false, "No USB printer reachable");
+        if (!usb.hasPermission(device)) {
+            return com.magilhub.printnats.queue.PrinterHealth.of(printer.id, true, false, "USB printer not responding (permission denied)");
+        }
+        com.magilhub.printnats.queue.PrinterHealth h = com.magilhub.printnats.queue.PrinterHealth.of(printer.id, true, true, null);
+        h.statusSupported = false;
+        return h;
     }
 
     @Override

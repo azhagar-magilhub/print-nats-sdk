@@ -65,6 +65,19 @@ export interface PrintNatsConfig {
   autoStartOnBoot?: boolean;
 }
 
+export interface PrinterHealth {
+  printerId: string;
+  reachable: boolean;
+  ready: boolean;
+  /** Same user-facing strings as print failures, e.g. "Cover open. Close the printer cover." */
+  message?: string | null;
+  /** PERMISSION_DENIED | OFFLINE | MECHANICAL | COVER_OPEN | PAPER_OUT | UNKNOWN */
+  category?: string | null;
+  /** false: the connection can't report status (USB/BT/spooler) — ready is a best guess. */
+  statusSupported: boolean;
+  checkedAt: number;
+}
+
 export type JobStatus = 'PENDING' | 'IN_PROGRESS' | 'SUCCESS' | 'SKIPPED' | 'FAILED' | 'CANCELLED';
 
 export interface PrintJob {
@@ -130,6 +143,14 @@ export interface PrintNatsApi {
   printReceipt(order: Record<string, unknown>, cardSurcharge?: number): Promise<number>;
   /** End-of-day report JSON (legacy PrintFramework.printEOD). */
   printEod(eodReport: Record<string, unknown>): Promise<number>;
+
+  /** Open the cash drawer on the receipt printer now (legacy PrintFramework.openCashDrawer). */
+  openCashDrawer(): Promise<{ ok: boolean; message?: string | null }>;
+  printerStatus(printerId: string): Promise<PrinterHealth | null>;
+  /** Every printer row (one probe per physical printer). */
+  printerStatuses(): Promise<PrinterHealth[]>;
+  /** Wake Wi-Fi printers before the first print (legacy wakeConfiguredPrinters). */
+  wakePrinters(): Promise<void>;
 
   getFailedJobs(): Promise<PrintJob[]>;
   retry(jobId: string): Promise<boolean>;

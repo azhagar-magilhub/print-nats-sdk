@@ -57,6 +57,7 @@ public final class PrintNats {
     private final PrintPipeline pipeline;
     private final StatusPublisher status;
     private final OrderLookup orders;
+    private final PrinterTransport transport;
     private final List<PrinterConfig> printers = new CopyOnWriteArrayList<>();
     private volatile Session session;
     private volatile boolean masterRole;
@@ -77,6 +78,7 @@ public final class PrintNats {
             }
         };
         TicketRenderer renderer = new DefaultTicketRenderer(b.starEncoder, b.receiptRenderer, log);
+        this.transport = b.transport;
         this.queue = new PrintQueue(b.jobStore, lookup, renderer, b.transport, log);
         this.orders = new OrderLookup(b.http, b.session, log);
 
@@ -145,6 +147,7 @@ public final class PrintNats {
 
     /** Recover unfinished work, then connect to NATS. */
     public void start() {
+        wakePrinters();
         queue.pruneFinished(System.currentTimeMillis() - FINISHED_JOB_RETENTION_MS);
         queue.recover();
         pipeline.recover();
@@ -224,6 +227,93 @@ public final class PrintNats {
     /** With the card-processing surcharge the UI holds for this order (Redux cpSurchargeByOrder). */
     public int printReceipt(JsonObject orderDetails, double cardSurcharge) {
         return pipeline.printReceipt(orderDetails, cardSurcharge);
+    }
+
+    // ---- cash drawer / printer health ------------------------------------------------------------------
+
+    /** DantSu openCashBox — what legacy PrintFramework.openCashDrawer sends to the receipt printer. */
+    static final byte[] CASH_DRAWER_PULSE = {0x1B, 0x70, 0x00, 0x3C, (byte) 0xFF};
+
+    /**
+     * Open the cash drawer on the receipt printer right away (not queued, not retried, no status polling) —
+     * legacy PrintFramework.openCashDrawer, used by every cash-payment screen.
+     */
+    public com.magilhub.printnats.queue.PrintResult openCashDrawer() {
+        PrinterConfig receipt = receiptPrinter();
+        if (receipt == null) {
+            if (logSink != null) logSink.append("print_", "Error:: Cash Drawer - No Cash Drawer Configured");
+            return new com.magilhub.printnats.queue.PrintResult(com.magilhub.printnats.queue.PrintOutcome.FAULT,
+                    "Please configure the Printer.");
+        }
+        com.magilhub.printnats.queue.PrintResult r = transport instanceof RoutingTransport
+                ? ((RoutingTransport) transport).sendDirect(receipt, CASH_DRAWER_PULSE)
+                : transport.send(receipt, CASH_DRAWER_PULSE);
+        if (logSink != null) {
+            logSink.append("print_", r.outcome == com.magilhub.printnats.queue.PrintOutcome.SUCCESS
+                    ? "Info:: Cash Drawer Opened Successfully " : "Error:: Cash Drawer Error " + r.message);
+        }
+        return r;
+    }
+
+    /** Health of one printer row (null when unknown id). */
+    public com.magilhub.printnats.queue.PrinterHealth printerStatus(String printerId) {
+        for (PrinterConfig p : printers) {
+            if (p.id.equals(printerId)) return probe(p);
+        }
+        return null;
+    }
+
+    /** Health of every PHYSICAL printer (one probe per connection+address, reported for each row). */
+    public List<com.magilhub.printnats.queue.PrinterHealth> printerStatuses() {
+        java.util.Map<String, com.magilhub.printnats.queue.PrinterHealth> byLane = new java.util.LinkedHashMap<>();
+        List<com.magilhub.printnats.queue.PrinterHealth> out = new ArrayList<>();
+        for (PrinterConfig p : printers) {
+            com.magilhub.printnats.queue.PrinterHealth h = byLane.get(p.laneKey());
+            if (h == null) byLane.put(p.laneKey(), h = probe(p));
+            com.magilhub.printnats.queue.PrinterHealth row = com.magilhub.printnats.queue.PrinterHealth.of(p.id, h.reachable, h.ready, h.message);
+            row.statusSupported = h.statusSupported;
+            out.add(row);
+        }
+        return out;
+    }
+
+    /**
+     * Legacy wakeConfiguredPrinters: a throwaway status query to each LAN printer so a Wi-Fi printer's radio is
+     * awake before the first real (300 ms connect) print. Fire-and-forget; also run by {@link #start()}.
+     */
+    public void wakePrinters() {
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                for (PrinterConfig p : printers) {
+                    if (p.connection != PrinterConfig.Connection.LAN || !seen.add(p.laneKey())) continue;
+                    com.magilhub.printnats.queue.PrinterHealth h = probe(p);
+                    if (logSink != null) logSink.append("print_", "WAKE:: " + p.address + " (" + p.resolvedStationName() + ") reachable="
+                            + h.reachable + (h.message == null ? "" : " " + h.message));
+                }
+            }
+        }, "print-nats-wake");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private com.magilhub.printnats.queue.PrinterHealth probe(PrinterConfig p) {
+        try {
+            if (transport instanceof com.magilhub.printnats.spi.PrinterProbe) {
+                return ((com.magilhub.printnats.spi.PrinterProbe) transport).probe(p);
+            }
+        } catch (RuntimeException e) {
+            return com.magilhub.printnats.queue.PrinterHealth.of(p.id, false, false, "Printer status check failed: " + e.getMessage());
+        }
+        com.magilhub.printnats.queue.PrinterHealth h = com.magilhub.printnats.queue.PrinterHealth.of(p.id, true, true, null);
+        h.statusSupported = false;
+        return h;
+    }
+
+    private PrinterConfig receiptPrinter() {
+        for (PrinterConfig p : printers) if (p.purpose == PrinterConfig.Purpose.RECEIPT) return p;
+        return null;
     }
 
     /** End-of-day report JSON (legacy printEOD). */

@@ -52,6 +52,17 @@ export const PrintNats: PrintNatsApi = {
   printReceipt: (order, cardSurcharge = 0) => requireNative().printReceipt(JSON.stringify(order), cardSurcharge),
   printEod: (eod) => requireNative().printEod(JSON.stringify(eod)),
 
+  openCashDrawer: () => requireNative().openCashDrawer(),
+  async printerStatus(printerId: string) {
+    return JSON.parse(await requireNative().printerStatus(printerId));
+  },
+  async printerStatuses() {
+    return JSON.parse(await requireNative().printerStatus(null));
+  },
+  async wakePrinters() {
+    requireNative().wakePrinters();
+  },
+
   async getFailedJobs(): Promise<PrintJob[]> {
     return JSON.parse(await requireNative().getFailedJobs());
   },
