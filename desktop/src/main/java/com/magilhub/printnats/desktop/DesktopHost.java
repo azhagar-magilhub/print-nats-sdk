@@ -126,6 +126,7 @@ public final class DesktopHost {
                 .outboxStore(new FileStores.Outbox(new File(dataDir, "outbox.json")))
                 .transport(transport)
                 .starEncoder(new com.magilhub.printnats.render.StarDotImpactEncoder())
+                .receiptRenderer(new com.magilhub.printnats.desktop.render.Java2dReceiptRenderer())
                 .log(log)
                 .listener(listener)
                 .dataCapDevice(false)

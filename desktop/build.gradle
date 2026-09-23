@@ -17,6 +17,8 @@ mainClassName = 'com.magilhub.printnats.desktop.Sidecar'
 
 dependencies {
     implementation project(':core')
+    // Java2D receipt renderer (render/legacy PrintUtil): QR codes — same version as the Android adapter, Java 7+.
+    implementation 'com.google.zxing:core:3.4.1'
     testImplementation "junit:junit:$junitVersion"
 }
 
