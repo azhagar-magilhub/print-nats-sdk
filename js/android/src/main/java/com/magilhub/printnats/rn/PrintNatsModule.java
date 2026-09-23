@@ -256,6 +256,21 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
 
     // ---- Failed Print Queue -------------------------------------------------------------------------
 
+    /** Print message received over FCM (receipt requests, KOT copies) — deduplicated against NATS natively. */
+    @ReactMethod
+    public void submitMessage(final String messageType, final String messageData, final String messageId, final Promise promise) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    promise.resolve(sdk().submitMessage(messageType, messageData, messageId));
+                } catch (Throwable t) {
+                    promise.reject("E_SUBMIT", t);
+                }
+            }
+        }, "print-nats-submit").start();
+    }
+
     /** Rediscovered printer IPs the backend doesn't have yet: {"mac": [oldIp, newIp]}. */
     @ReactMethod
     public void getIpOverrides(Promise promise) {

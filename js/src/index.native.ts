@@ -84,6 +84,8 @@ export const PrintNats: PrintNatsApi = {
       (raw) => ({ printerIds: JSON.parse(raw.printerIds), oldAddress: raw.oldAddress, newAddress: raw.newAddress }),
       cb,
     ),
+  submitMessage: (messageType, messageData, messageId) =>
+    requireNative().submitMessage(messageType, messageData, messageId),
   async getIpOverrides(): Promise<IpOverrides> {
     return JSON.parse(await requireNative().getIpOverrides());
   },

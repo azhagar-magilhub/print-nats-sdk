@@ -112,6 +112,8 @@ export const PrintNats: PrintNatsApi = {
   onConnectionEvent: (cb: (e: ConnectionEvent) => void) => listen('connection', cb),
   onPrinterAddressChanged: (cb: (e: PrinterAddressEvent) => void) => listen('printer-address', cb),
   getIpOverrides: () => call<IpOverrides>('printers/ip-overrides'),
+  submitMessage: (messageType: string, messageData: string, messageId: string) =>
+    call<boolean>('messages/submit', { messageType, messageData, messageId }),
 };
 
 export default PrintNats;

@@ -367,6 +367,14 @@ public final class PrintNats {
         return null;
     }
 
+    /**
+     * Print message received by the host outside NATS (FCM): receipt requests only ever arrive that way, KOTs arrive
+     * on both and are deduplicated against the NATS copy. See {@link PrintPipeline#onHostMessage}.
+     */
+    public boolean submitMessage(String messageType, String messageDataJson, String messageId) {
+        return pipeline.onHostMessage(messageType, messageDataJson, messageId);
+    }
+
     /** Pre-built receipt JSON (legacy printReceiptJson). */
     public int printReceiptJson(String receiptJson, boolean textReceipt) {
         return pipeline.printReceiptJson(receiptJson, textReceipt);

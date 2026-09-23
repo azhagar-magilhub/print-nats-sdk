@@ -175,6 +175,13 @@ export interface PrintNatsApi {
   onStatusEvent(cb: (e: StatusEvent) => void): Unsubscribe;
   onConnectionEvent(cb: (e: ConnectionEvent) => void): Unsubscribe;
 
+  /**
+   * A print message that arrived over FCM (`data.messageType` / `data.messageData`). Receipt requests are only sent
+   * that way; KOT copies are deduplicated against NATS. messageId: `data.messageId`, else the FCM message id.
+   * Resolves true when it was new.
+   */
+  submitMessage(messageType: string, messageData: string, messageId: string): Promise<boolean>;
+
   /** Printer IP rediscovery: save `newAddress` to the backend (legacy updateIPAddress → EditPrinter). */
   onPrinterAddressChanged(cb: (e: PrinterAddressEvent) => void): Unsubscribe;
   /** Rediscoveries made while no UI was listening (e.g. app killed) — sync these on start. */

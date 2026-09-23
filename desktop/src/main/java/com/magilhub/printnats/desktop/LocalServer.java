@@ -32,7 +32,7 @@ import java.util.concurrent.TimeUnit;
  * The sidecar's API for the React UI (js/src/index.ts). 127.0.0.1 only; every call needs the per-install token
  * (Authorization: Bearer, or ?token= for the SSE stream, since EventSource can't set headers).
  * POST /v1/{configure,stop,restaurant,printers,session,devices,master,master/status,connected,print/kot,
- * print/edit-kot,print/receipt,print/eod,printers/ip-overrides,jobs/failed,jobs/retry,jobs/cancel,jobs/retry-printer,jobs/cancel-printer,
+ * print/edit-kot,print/receipt,print/eod,printers/ip-overrides,messages/submit,jobs/failed,jobs/retry,jobs/cancel,jobs/retry-printer,jobs/cancel-printer,
  * printers/installed}; GET /v1/events (text/event-stream: {type: job|status|connection, payload}).
  */
 public final class LocalServer {
@@ -246,6 +246,8 @@ public final class LocalServer {
             }
             case "print/eod":
                 return host.sdk().printEod(json.getAsJsonObject().get("eod").toString());
+            case "messages/submit":
+                return host.sdk().submitMessage(str(json, "messageType"), str(json, "messageData"), str(json, "messageId"));
             case "printers/ip-overrides":
                 return host.sdk().ipOverrides().byMac;
             case "jobs/failed":

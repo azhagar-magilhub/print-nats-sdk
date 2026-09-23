@@ -187,6 +187,38 @@ public class PrintPipelineTest {
     }
 
     @Test
+    public void fcmReceiptRequestWithoutOrderNoPrintsOnceOnReceiptPrinter() throws Exception {
+        // Backend receipt requests (orderStatus 60) only come over FCM and carry orderId, not orderNo.
+        JsonObject md = RulesFixtures.messageData("60");
+        md.remove("orderNo");
+        String fcmId = "0:1790174735450798%9bb5b9b7f9fd7ecd";
+        assertTrue(pipeline.onHostMessage("PRINT_RECEIPT", md.toString(), fcmId));
+        assertEquals("FCM redelivery", false, pipeline.onHostMessage("PRINT_RECEIPT", md.toString(), fcmId));
+        awaitJobs(1);
+        Thread.sleep(200);
+        assertEquals(Arrays.asList("RCPT"), sent);
+    }
+
+    @Test
+    public void kotArrivingOnNatsAndFcmPrintsOnce() throws Exception {
+        FakeMessage nats = new FakeMessage("M-KOT", "PRINT_RECEIPT", RulesFixtures.messageData(null));
+        pipeline.onPrintMessage(nats);
+        assertEquals("FCM copy carries the NATS message id → duplicate", false,
+                pipeline.onHostMessage("PRINT_RECEIPT", RulesFixtures.messageData(null).toString(), "M-KOT"));
+        awaitJobs(2);
+        Thread.sleep(300);
+        assertEquals(2, sent.size());
+    }
+
+    @Test
+    public void hostMessageForAnotherLocationIsIgnored() {
+        JsonObject md = RulesFixtures.messageData("60");
+        md.addProperty("locationId", "L2");
+        assertEquals(false, pipeline.onHostMessage("PRINT_RECEIPT", md.toString(), "F1"));
+        assertTrue(inbound.pending().isEmpty());
+    }
+
+    @Test
     public void hostUiKotIsDedupedWithinTwoSeconds() throws Exception {
         JsonObject order = RulesFixtures.order("OT-P");
         assertEquals(2, pipeline.printKot(order, null, false));

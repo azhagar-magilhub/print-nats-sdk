@@ -137,6 +137,44 @@ public final class PrintPipeline implements NatsEvents {
         submit(in);
     }
 
+    /**
+     * A print message that reached the host another way — FCM, which the backend uses for receipt requests
+     * ({@code PRINT_RECEIPT} with orderStatus 60: never sent over NATS) and as a second copy of KOT messages.
+     * Same persist + dedup as NATS: a KOT's FCM copy carries the NATS message id, so whichever copy arrives second
+     * is dropped. Receipt requests have no orderNo (the order is fetched by orderId), so orderId is accepted here.
+     *
+     * @param messageId the message's own id ({@code data.messageId}), else the transport's (FCM message id)
+     * @return true when accepted as new, false for duplicates / other location / unusable data
+     */
+    public boolean onHostMessage(String messageType, String rawData, String messageId) {
+        JsonObject md = Json.parseObject(rawData);
+        if (md == null || messageId == null || messageId.isEmpty()) {
+            log.append("fcmInsights_", "Host " + messageType + " without data/messageId ignored");
+            return false;
+        }
+        String ref = Json.str(md, "orderNo");
+        if (ref == null) ref = Json.str(md, "orderId");
+        if (ref == null) {
+            log.append("fcmInsights_", "Host " + messageType + " without orderNo/orderId ignored, messageId=" + messageId);
+            return false;
+        }
+        Session s = session;
+        if (s.locationId != null && !s.locationId.equals(Json.str(md, "locationId"))) {
+            log.append("fcmInsights_", "Host message for another location ignored, messageId=" + messageId);
+            return false;
+        }
+        InboundStore.Inbound in = new InboundStore.Inbound(ref + "|" + messageId, messageType, rawData, messageId,
+                System.currentTimeMillis());
+        if (!inbound.record(in)) {
+            log.append("fcmInsights_", "Duplicate host EVENT dropped ref=" + ref + " messageId=" + messageId);
+            return false;
+        }
+        if (MessageRules.publishesReceived(messageType, md)) publishReceived(messageType, md, messageId);
+        log.append("fcmInsights_", "Host EVENT accepted " + messageType + " ref=" + ref + " messageId=" + messageId);
+        submit(in);
+        return true;
+    }
+
     @Override
     public void onStatusEvent(String subject, byte[] data) {
         if (listener != null) listener.onStatusEvent(subject, data, false);
