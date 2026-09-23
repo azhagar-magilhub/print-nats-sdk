@@ -51,6 +51,18 @@ IN_PROGRESS → PENDING and resumes in orderNo, sortOrder order, failure categor
 MerchantApp's `PrintFrameworkModuleRetryTest.transientFailuresStillAutoRetry` is stale (the code intentionally
 made "printer not reachable" a physical fault); `FailureClassifierTest` follows the code.
 
+### NATS (`core/nats`, milestone 5a)
+
+| # | Legacy (`NatsConnectionService`) | SDK `NatsClient` |
+|---|---|---|
+| 9 | Status publishes buffered during a network blip are only flushed on a *fresh* connect; jnats reconnects the same connection transparently, so they stayed unsent until app restart | Also flushed on RECONNECTED/RESUBSCRIBED and after any successful publish (found by `NatsClientIT`) |
+| 10 | JetStream ack when JS reports done (sometimes before printing finished — `FCMService.tsx:1314` not awaited); no-messageId messages acked on receipt | Pipeline acks after the job is persisted (milestone 5b) |
+
+Unchanged: stream PRINTKOT, bind to BE durable consumer = deviceId, consumer-only stopgap self-provision,
+testMode provisioning, PRINTEVENTSTATUS stream (2 d), `printack.<deviceSubject>` core-NATS receipt ack,
+5→30 s backoff, infinite client reconnects, 200-entry publish buffer (oldest dropped), status subscription
+own-subject vs whole-location for master, history replay, JSON shape of status events (`StatusPublisher`).
+
 ## Known legacy defects carried over verbatim (not yet fixed — decide before MerchantApp cut-over)
 
 | # | Where | Defect |
