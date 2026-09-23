@@ -33,6 +33,22 @@ Mutation-checked: changing one byte/string in either renderer fails the suite.
 | 2 | Thermal T1 | `kotFontStyle == null` → NPE, KOT not printed | treated as empty |
 | 3 | Template dispatch | blank `templateNo` → T1 (JS default "1"); native Star path NPEs on null | blank → T3 |
 
+### Print queue (`core/queue`, milestone 4)
+
+| # | Legacy (`PrintFrameworkModule`) | SDK `PrintQueue` |
+|---|---|---|
+| 4 | Any non-physical failure auto-retries (incl. "Failed to send data" — bytes may already have printed) | Only CONNECTION_FAILED auto-retries; AMBIGUOUS goes to the Failed queue (no duplicate tickets). `RetryPolicy.retryAmbiguous` restores legacy behaviour |
+| 5 | A dead printer: every queued KOT burns 4 attempts + timeouts | Same for the first job (timing unchanged); after 2 jobs finally fail to connect the printer pauses 60 s and later jobs wait, then print on their own when it is back |
+| 6 | Stale (45 min) KOT: nothing printed, reported as success, row deleted | Status SKIPPED with reason |
+| 7 | Success deletes the DB row | Row kept as SUCCESS (host prunes) — needed for diagnosis |
+| 8 | Manual retry keeps the retry count | Manual retry resets the retry budget |
+
+Unchanged: per-printer serial lanes, retry → back of that printer's lane, KOT 3× linear 1/2/3 s, receipt 5× 15 s,
+physical faults never auto-retried (incl. "printer not reachable"), 150 s watchdog, crash recovery resets
+IN_PROGRESS → PENDING and resumes in orderNo, sortOrder order, failure categories.
+MerchantApp's `PrintFrameworkModuleRetryTest.transientFailuresStillAutoRetry` is stale (the code intentionally
+made "printer not reachable" a physical fault); `FailureClassifierTest` follows the code.
+
 ## Known legacy defects carried over verbatim (not yet fixed — decide before MerchantApp cut-over)
 
 | # | Where | Defect |
