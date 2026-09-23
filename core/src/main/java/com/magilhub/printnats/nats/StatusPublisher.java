@@ -92,6 +92,26 @@ public final class StatusPublisher implements JobListener {
         publishAsync(json);
     }
 
+    /** A print_failed that has no local job (legacy JS publishReprintSkipped for REPRINT_STATION_KOT). */
+    public void publishFailed(String messageId, String printStation, String type, String reason, String orderNo,
+                              String kotNo, String orderId, String sortOrder, String cuisineId) {
+        JsonObject json = new JsonObject();
+        put(json, "messageId", messageId);
+        put(json, "locationId", locationId);
+        put(json, "printjobid", messageId);
+        put(json, "printStation", printStation);
+        put(json, "status", "print_failed");
+        put(json, "type", type);
+        put(json, "reason", reason);
+        put(json, "orderNo", orderNo);
+        put(json, "kotNo", kotNo);
+        put(json, "orderId", orderId);
+        put(json, "sortOrder", sortOrder);
+        put(json, "cuisineId", cuisineId);
+        json.addProperty("timestamp", System.currentTimeMillis());
+        publishAsync(json);
+    }
+
     /** Port of PrintFrameworkModule.buildPrintStatusEvent + NatsPrintStatusPublisher JSON. */
     JsonObject buildJobEvent(PrintJob job, String status, String reason) {
         JsonObject data = parse(job.payloadJson);
@@ -133,7 +153,7 @@ public final class StatusPublisher implements JobListener {
             cuisineId = printer.cuisineId;
             isMaster = printer.purpose == PrinterConfig.Purpose.MASTER_KOT;
             isStation = printer.isStation();
-            station = printer.isStation() ? printer.stationName : printer.name;
+            station = printer.resolvedStationName();
             if (printer.address != null && !printer.address.isEmpty()) {
                 extra.addProperty("printerIp", printer.address.split("\\|")[0]);
             }

@@ -102,7 +102,7 @@ public final class PrintQueue {
         job.updatedAt = now;
         store.insert(job);
         emit(job, "inqueue");
-        lane(job.printerId).offer(job.jobId);
+        laneFor(job.printerId).offer(job.jobId);
     }
 
     /**
@@ -123,7 +123,7 @@ public final class PrintQueue {
                 return c != 0 ? c : compareNumeric(a.sortOrder, b.sortOrder);
             }
         });
-        for (PrintJob j : pending) lane(j.printerId).offer(j.jobId);
+        for (PrintJob j : pending) laneFor(j.printerId).offer(j.jobId);
     }
 
     /** Manual retry from the Failed Print Queue: FAILED → PENDING with a fresh retry budget. */
@@ -137,7 +137,7 @@ public final class PrintQueue {
         j.updatedAt = System.currentTimeMillis();
         store.update(j);
         emit(j, "inqueue");
-        lane(j.printerId).offer(j.jobId);
+        laneFor(j.printerId).offer(j.jobId);
         return true;
     }
 
@@ -168,6 +168,26 @@ public final class PrintQueue {
         return n;
     }
 
+    /**
+     * isFlushDB: legacy deleted every row of the print table (pending and failed) without publishing.
+     * Here they are marked CANCELLED ("Flushed") silently — no status events, like legacy.
+     */
+    public int flushAll() {
+        int n = 0;
+        for (PrintJob j : store.findByStatus(JobStatus.PENDING, JobStatus.FAILED)) {
+            j.status = JobStatus.CANCELLED;
+            j.reason = "Flushed (isFlushDB)";
+            j.updatedAt = System.currentTimeMillis();
+            store.update(j);
+            n++;
+        }
+        return n;
+    }
+
+    public boolean exists(String jobId) {
+        return store.get(jobId) != null;
+    }
+
     public List<PrintJob> failedJobs() {
         return store.findByStatus(JobStatus.FAILED);
     }
@@ -180,21 +200,31 @@ public final class PrintQueue {
 
     // ---- lanes -------------------------------------------------------------------------------------
 
-    private Lane lane(String printerId) {
-        Lane l = lanes.get(printerId);
+    /** One lane (and breaker) per physical printer; unknown printers get their own lane and fail fast. */
+    private String laneKeyOf(String printerId) {
+        PrinterConfig p = printers.get(printerId);
+        return p == null ? "id:" + printerId : p.laneKey();
+    }
+
+    private Lane laneFor(String printerId) {
+        return lane(laneKeyOf(printerId));
+    }
+
+    private Lane lane(String laneKey) {
+        Lane l = lanes.get(laneKey);
         if (l == null) {
-            Lane created = new Lane(printerId);
-            l = lanes.putIfAbsent(printerId, created);
+            Lane created = new Lane(laneKey);
+            l = lanes.putIfAbsent(laneKey, created);
             if (l == null) l = created;
         }
         return l;
     }
 
-    private CircuitBreaker breaker(String printerId) {
-        CircuitBreaker b = breakers.get(printerId);
+    private CircuitBreaker breaker(String laneKey) {
+        CircuitBreaker b = breakers.get(laneKey);
         if (b == null) {
             CircuitBreaker created = new CircuitBreaker(breakerThreshold, breakerCooldownMs); // threshold<=0 → never opens
-            b = breakers.putIfAbsent(printerId, created);
+            b = breakers.putIfAbsent(laneKey, created);
             if (b == null) b = created;
         }
         return b;
@@ -202,12 +232,12 @@ public final class PrintQueue {
 
     /** Serial worker for one printer. At most one job of this printer is being sent at any time. */
     private final class Lane implements Runnable {
-        private final String printerId;
+        private final String laneKey;
         private final ArrayDeque<String> queue = new ArrayDeque<>();
         private boolean running;
 
-        Lane(String printerId) {
-            this.printerId = printerId;
+        Lane(String laneKey) {
+            this.laneKey = laneKey;
         }
 
         synchronized void offer(String jobId) {
@@ -227,7 +257,7 @@ public final class PrintQueue {
             while (true) {
                 String jobId;
                 synchronized (this) {
-                    long wait = breaker(printerId).waitMs(System.currentTimeMillis());
+                    long wait = breaker(laneKey).waitMs(System.currentTimeMillis());
                     if (queue.isEmpty() || wait > 0) {
                         running = false;
                         if (wait > 0 && !queue.isEmpty()) {
@@ -245,7 +275,7 @@ public final class PrintQueue {
                 try {
                     process(jobId);
                 } catch (RuntimeException e) {
-                    log.append("print_", "Exception:: queue worker " + printerId + " job " + jobId + ": " + e);
+                    log.append("print_", "Exception:: queue worker " + laneKey + " job " + jobId + ": " + e);
                 }
             }
         }
@@ -298,7 +328,7 @@ public final class PrintQueue {
         }
 
         if (result.outcome == PrintOutcome.SUCCESS) {
-            breaker(job.printerId).record(PrintOutcome.SUCCESS, System.currentTimeMillis());
+            breaker(printer.laneKey()).record(PrintOutcome.SUCCESS, System.currentTimeMillis());
             finish(job, JobStatus.SUCCESS, null, "print completed");
             return;
         }
@@ -318,14 +348,14 @@ public final class PrintQueue {
             scheduler.schedule(new Runnable() {
                 @Override
                 public void run() {
-                    lane(job.printerId).offer(job.jobId);
+                    laneFor(job.printerId).offer(job.jobId);
                 }
             }, policy.delayMs(nextAttempt), TimeUnit.MILLISECONDS);
             return;
         }
         // Breaker counts jobs that finally failed to connect (not individual attempts), so one job's own
         // retries keep legacy timing and only the printer's *later* jobs wait out the cooldown.
-        breaker(job.printerId).record(result.outcome, System.currentTimeMillis());
+        breaker(printer.laneKey()).record(result.outcome, System.currentTimeMillis());
         fail(job, result);
     }
 

@@ -63,6 +63,28 @@ testMode provisioning, PRINTEVENTSTATUS stream (2 d), `printack.<deviceSubject>`
 5→30 s backoff, infinite client reconnects, 200-entry publish buffer (oldest dropped), status subscription
 own-subject vs whole-location for master, history replay, JSON shape of status events (`StatusPublisher`).
 
+### Pipeline + rules (`core/pipeline`, `core/rules`, milestones 5b/5c)
+
+Ported behaviour-preserving from `useFCMNotificationHandler.tsx` (PRINT_RECEIPT, REPRINT_STATION_KOT),
+`useNetworkPrintService.tsx` (KOT/edit-KOT payload), `useOrderPrintService.tsx` (branchName guard, dedupe),
+`FCMService.tsx` (received event, dedup, orderNo gate) and native `printKot` (master + station routing).
+Covered by `RulesTest`, `PrintPipelineTest`, `EndToEndIT`.
+
+| # | Legacy | SDK |
+|---|---|---|
+| 11 | Duplicate NATS deliveries never acked (redelivered until ackWait) | Acked and dropped |
+| 12 | Dedup marked *before* handling; a crash mid-handle lost the print | Recorded → acked → processed; unprocessed records replayed on start; deterministic job ids (no double queue) |
+| 13 | 2 s KOT dedupe window keyed per order/batch (not station) — also dropped a second station's REPRINT_STATION_KOT within 2 s | Window applies only to host-UI prints; NATS messages dedupe by message id |
+| 14 | Fetch failure → item-less object → silent TypeError | Skipped with a logged reason |
+| 15 | `format(new Date("undefined…"))` RangeError aborted the whole KOT | Field printed empty |
+| 16 | One physical printer with several station tags = several independent queues (concurrent sends to one device) | One lane per physical printer (connection + address) |
+| 17 | Reprint jobs without `locationId` in their data were not published | Falls back to the configured location |
+| 18 | Blank `templateNo` → "1" | → "3" (agreed) |
+
+Kept on purpose (legacy quirks): PRINT_RECEIPT fetch passes no messageId (no BE ack-on-getOrder); edit/void
+KOTs carry no messageId; edit KOT reads `theme.kotFontStyle` (not uiFeatureFlags) and prints the order time as
+ETA on templates 2–5; `isFlushDB` silently clears queued/failed jobs.
+
 ## Known legacy defects carried over verbatim (not yet fixed — decide before MerchantApp cut-over)
 
 | # | Where | Defect |

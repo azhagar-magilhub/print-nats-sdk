@@ -23,6 +23,20 @@ public final class PrinterConfig {
     /** Extra blank-line spacing for the legacy Template 1 layout (0/1/2). */
     public int kotSpace;
 
+    /**
+     * Identity of the PHYSICAL printer. Hosts register one config per station tag (same device, several
+     * cuisines); the queue serialises per physical printer so two station tickets never hit it at once.
+     */
+    public String laneKey() {
+        if (address == null || address.isEmpty()) return "id:" + id;
+        return connection + ":" + address + (connection == Connection.LAN ? ":" + port : "");
+    }
+
+    /** Legacy resolveStationName: null or "-" → "Expo" (the master/default station). */
+    public String resolvedStationName() {
+        return stationName == null || "-".equalsIgnoreCase(stationName) ? "Expo" : stationName;
+    }
+
     public boolean isStation() {
         return purpose == Purpose.STATION_KOT;
     }
