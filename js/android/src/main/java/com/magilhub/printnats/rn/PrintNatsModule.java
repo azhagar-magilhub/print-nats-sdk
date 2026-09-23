@@ -186,6 +186,15 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
+    public void printReceiptJson(String receiptJson, boolean textReceipt, Promise promise) {
+        try {
+            promise.resolve(sdk().printReceiptJson(receiptJson, textReceipt));
+        } catch (Throwable t) {
+            promise.reject("E_PRINT", t);
+        }
+    }
+
+    @ReactMethod
     public void printEod(String eodJson, Promise promise) {
         try {
             promise.resolve(sdk().printEod(eodJson));

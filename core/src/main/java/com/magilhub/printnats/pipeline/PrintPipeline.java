@@ -227,6 +227,22 @@ public final class PrintPipeline implements NatsEvents {
         return enqueueReceipt(order, null, cardSurcharge);
     }
 
+    /**
+     * A receipt whose printReceiptJson payload the host already built (QR receipts, shift summary, cash log) —
+     * legacy PrintFramework.printReceiptJson(json, isTextReceiptPrint). Queued on the receipt printer.
+     */
+    public int printReceiptJson(String receiptJson, boolean textReceipt) {
+        PrinterConfig receiptPrinter = receiptPrinter();
+        if (receiptPrinter == null) {
+            log.append("print_", "Info:: Receipt skipped — no receipt printer configured");
+            return 0;
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("receiptJson", receiptJson);
+        payload.addProperty("textReceipt", textReceipt);
+        return enqueueOnce(job(UUID.randomUUID() + "|" + receiptPrinter.id, JobKind.RECEIPT, receiptPrinter.id, payload));
+    }
+
     /** End-of-day report on the receipt printer (legacy printEOD). {@code itemReport}: JSON is an ItemReport array. */
     public int printEod(String json, boolean itemReport) {
         PrinterConfig receiptPrinter = receiptPrinter();

@@ -230,6 +230,11 @@ public final class LocalServer {
                 double surcharge = o.has("cardSurcharge") ? o.get("cardSurcharge").getAsDouble() : 0;
                 return host.sdk().printReceipt(o.getAsJsonObject("order"), surcharge);
             }
+            case "print/receipt-json": {
+                JsonObject o = json.getAsJsonObject();
+                return host.sdk().printReceiptJson(o.get("receiptJson").getAsString(),
+                        o.has("textReceipt") && o.get("textReceipt").getAsBoolean());
+            }
             case "print/eod":
                 return host.sdk().printEod(json.getAsJsonObject().get("eod").toString());
             case "jobs/failed":

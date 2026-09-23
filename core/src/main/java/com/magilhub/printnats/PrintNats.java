@@ -316,6 +316,11 @@ public final class PrintNats {
         return null;
     }
 
+    /** Pre-built receipt JSON (legacy printReceiptJson). */
+    public int printReceiptJson(String receiptJson, boolean textReceipt) {
+        return pipeline.printReceiptJson(receiptJson, textReceipt);
+    }
+
     /** End-of-day report JSON (legacy printEOD). */
     public int printEod(String eodJson) {
         return pipeline.printEod(eodJson, false);
