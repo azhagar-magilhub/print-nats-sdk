@@ -1,0 +1,19 @@
+<!-- WinSW service definition: runs the print-nats sidecar at boot so KOTs print with the UI closed.
+     WinSW .NET 2.0 build for Windows XP; .NET 4.6.1 build for Windows 7+. Rename WinSW-*.exe to
+     PrintNatsSidecar.exe next to this file. -->
+<service>
+  <id>PrintNatsSidecar</id>
+  <name>PrintNats Printing</name>
+  <description>Receives orders over NATS and prints kitchen tickets and receipts.</description>
+  <executable>%BASE%\..\jre\bin\java.exe</executable>
+  <!-- Fixed port for the service; the token is generated on each start and written to endpoint.json. -->
+  <arguments>-jar "%BASE%\..\print-nats-desktop.jar" --port 47815 --data-dir "%ALLUSERSPROFILE%\PrintNats"</arguments>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+</service>

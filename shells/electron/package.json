@@ -1,0 +1,26 @@
+{
+  "name": "merchant-pos-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows 10/11 desktop shell: React UI + print-nats Java sidecar",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.magilhub.merchantpos.desktop",
+    "productName": "MerchantPOS",
+    "files": ["main.js", "preload.js", "sidecar-launcher.js", "app/**"],
+    "extraResources": [
+      { "from": "sidecar/jre", "to": "sidecar/jre" },
+      { "from": "../../desktop/build/libs/print-nats-desktop.jar", "to": "sidecar/print-nats-desktop.jar" }
+    ],
+    "win": { "target": "nsis" },
+    "nsis": { "oneClick": false, "perMachine": true, "allowToChangeInstallationDirectory": true }
+  }
+}
