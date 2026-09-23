@@ -244,8 +244,10 @@ public final class NatsClient {
 
                 JetStream js = nc.jetStream();
                 jetStream = js;
-                flushPendingPublishes(js);
+                // Stream first: a JetStream publish to a subject with no stream is delivered but never acked,
+                // so flushing first would keep (and later re-send) the event. (Legacy had the same order.)
                 ensureStatusStream(nc);
+                flushPendingPublishes(js);
                 if (config.testMode) provisionForTest(nc);
 
                 JetStreamSubscription sub = bindPrintConsumer(nc, js);
