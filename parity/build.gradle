@@ -18,7 +18,7 @@ task syncLegacySources(type: Sync) {
         include 'framework/models/**', 'framework/pojo/**', 'framework/utility/Table.java',
                 'framework/utility/Utils.java', 'framework/utility/drawreceipt/**',
                 'framework/async/AsyncEscPosPrinter.java', 'framework/db/entity/PrintEntity.java',
-                'framework/ConnectionUtils/PrintUtil.java', 'framework/ConnectionUtils/StarPrintUtil.java', 'logging/LogFileAppender.java'
+                'framework/ConnectionUtils/PrintUtil.java', 'framework/ConnectionUtils/StarPrintUtil.java', 'framework/starUtils/ModelCapability.java', 'framework/starUtils/PrinterSettingConstant.java', 'logging/LogFileAppender.java'
         into 'com/magilhub/merchantapp'
     }
     doFirst {

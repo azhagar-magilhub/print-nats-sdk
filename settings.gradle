@@ -10,3 +10,4 @@ if (hasProperty('rnHost')) {
     project(':rn-bridge').projectDir = file('js/android')
 }
 include ':sample-android'
+include ':desktop'

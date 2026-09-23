@@ -1,0 +1,33 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+// Desktop sidecar: must run on a Java 8 JRE (Windows XP) up to current Windows.
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    if (JavaVersion.current().isJava9Compatible()) {
+        options.compilerArgs.addAll(['--release', '8'])
+    }
+}
+
+mainClassName = 'com.magilhub.printnats.desktop.Sidecar'
+
+dependencies {
+    implementation project(':core')
+    testImplementation "junit:junit:$junitVersion"
+}
+
+// One runnable jar (core + jnats + gson + threetenbp) for Electron / NW.js / WinSW to launch with a bundled JRE.
+task fatJar(type: Jar) {
+    archiveFileName = 'print-nats-desktop.jar'
+    manifest { attributes 'Main-Class': mainClassName, 'Implementation-Version': project.version }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.main.output
+    dependsOn configurations.runtimeClasspath
+    from { configurations.runtimeClasspath.findAll { it.name.endsWith('.jar') }.collect { zipTree(it) } } {
+        exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class', 'META-INF/versions/**'
+    }
+}

@@ -1,6 +1,7 @@
 // Desktop (react-native-web in Electron / NW.js): client for the local Java sidecar (phase 2).
-// Same API as index.native.ts; transport is HTTP + WebSocket on 127.0.0.1 with a per-install token that the
-// shell (Electron main / NW.js) passes in via window.__PRINT_NATS__ = { port, token }.
+// Same API as index.native.ts; transport is HTTP + Server-Sent Events on 127.0.0.1 with a per-install token that
+// the shell (Electron main / NW.js) passes in via window.__PRINT_NATS__ = { port, token } (or reads it from the
+// sidecar's <dataDir>/endpoint.json when the sidecar runs as a Windows service).
 import {
   ConnectionEvent, JobEvent, PrintJob, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
 } from './types';
@@ -32,20 +33,19 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 
 type Handler = (msg: { type: string; payload: any }) => void;
 const handlers = new Set<Handler>();
-let socket: WebSocket | null = null;
+let source: EventSource | null = null;
 
-function ensureSocket() {
-  if (socket) return;
+// Server-Sent Events (EventSource exists in Chrome 49 / NW.js 0.14, so no WebSocket library is needed on either
+// side). EventSource can't set headers, so the token goes in the query string (127.0.0.1 only).
+function ensureStream() {
+  if (source) return;
   const { port, token } = sidecar();
-  socket = new WebSocket(`ws://127.0.0.1:${port}/v1/events?token=${encodeURIComponent(token)}`);
-  socket.onmessage = (m) => {
+  source = new EventSource(`http://127.0.0.1:${port}/v1/events?token=${encodeURIComponent(token)}`);
+  source.onmessage = (m: MessageEvent) => {
     const msg = JSON.parse(String(m.data));
     handlers.forEach((h) => h(msg));
   };
-  socket.onclose = () => {
-    socket = null;
-    if (handlers.size > 0) setTimeout(ensureSocket, 2000);
-  };
+  // EventSource reconnects by itself after errors; nothing else to do here.
 }
 
 function listen<T>(type: string, cb: (e: T) => void): Unsubscribe {
@@ -53,8 +53,14 @@ function listen<T>(type: string, cb: (e: T) => void): Unsubscribe {
     if (msg.type === type) cb(msg.payload as T);
   };
   handlers.add(h);
-  ensureSocket();
-  return () => handlers.delete(h);
+  ensureStream();
+  return () => {
+    handlers.delete(h);
+    if (handlers.size === 0 && source) {
+      source.close();
+      source = null;
+    }
+  };
 }
 
 export const PrintNats: PrintNatsApi = {
