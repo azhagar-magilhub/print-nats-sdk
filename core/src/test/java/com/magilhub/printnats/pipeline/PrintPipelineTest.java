@@ -219,6 +219,29 @@ public class PrintPipelineTest {
     }
 
     @Test
+    public void natsKotForAnOrderThisDevicePrintedIsDroppedWhenEnabled() throws Exception {
+        pipeline.setSuppressNatsKotAfterHostPrint(true);
+        JsonObject order = RulesFixtures.order("OT-P");
+        assertEquals(2, pipeline.printKot(order, null, false)); // device printed it at order time
+        awaitJobs(2);
+        FakeMessage m = new FakeMessage("M-LATER", "PRINT_RECEIPT", RulesFixtures.messageData(null)); // BE re-sends after sync
+        pipeline.onPrintMessage(m);
+        assertEquals("acked, not redelivered", 1, m.acks);
+        Thread.sleep(400);
+        assertEquals("no second ticket", 2, sent.size());
+    }
+
+    @Test
+    public void natsKotStillPrintsByDefault() throws Exception {
+        JsonObject order = RulesFixtures.order("OT-P");
+        assertEquals(2, pipeline.printKot(order, null, false));
+        awaitJobs(2);
+        pipeline.onPrintMessage(new FakeMessage("M-LATER", "PRINT_RECEIPT", RulesFixtures.messageData(null)));
+        awaitJobs(4);
+        assertEquals("MerchantApp behaviour unchanged", 4, sent.size());
+    }
+
+    @Test
     public void hostUiKotIsDedupedWithinTwoSeconds() throws Exception {
         JsonObject order = RulesFixtures.order("OT-P");
         assertEquals(2, pipeline.printKot(order, null, false));

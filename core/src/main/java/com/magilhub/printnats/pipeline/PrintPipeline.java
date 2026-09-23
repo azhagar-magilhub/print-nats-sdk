@@ -66,6 +66,23 @@ public final class PrintPipeline implements NatsEvents {
         return t;
     });
     private final Map<String, Long> lastKotByOrder = new ConcurrentHashMap<>();
+    /** orderId|sortOrder|V → when this device printed that KOT itself (host call). See suppressNatsKotAfterHostPrint. */
+    private final Map<String, Long> hostPrintedKots = new ConcurrentHashMap<>();
+    static final long HOST_PRINT_MEMORY_MS = 12L * 60 * 60 * 1000;
+    private volatile boolean suppressNatsKotAfterHostPrint = false;
+
+    /**
+     * Hosts that print their own KOTs at order time (maghilOrder: orders are created on the device, online or
+     * offline) set this so a later NATS/FCM KOT for the same order + batch — the backend re-sending it after sync —
+     * is dropped instead of printing a second ticket. Off by default (MerchantApp behaviour unchanged).
+     */
+    public void setSuppressNatsKotAfterHostPrint(boolean suppress) {
+        this.suppressNatsKotAfterHostPrint = suppress;
+    }
+
+    private static String hostKotKey(JsonObject order, boolean cancelled) {
+        return orEmpty(Json.str(order, "orderId")) + "|" + orEmpty(Json.str(order, "sortOrder")) + (cancelled ? "|V" : "");
+    }
 
     /** Builds MessageRules for the current restaurant/session (lets tests inject a fake order lookup). */
     public interface MessageRulesFactory {
@@ -319,6 +336,14 @@ public final class PrintPipeline implements NatsEvents {
                 return 0;
             }
             lastKotByOrder.put(key, now);
+            if (suppressNatsKotAfterHostPrint) hostPrintedKots.put(hostKotKey(order, cancelled), now);
+        } else if (suppressNatsKotAfterHostPrint) {
+            Long printedAt = hostPrintedKots.get(hostKotKey(order, cancelled));
+            if (printedAt != null && System.currentTimeMillis() - printedAt < HOST_PRINT_MEMORY_MS) {
+                log.append("print_", "Info:: KOT skipped — already printed on this device for " + hostKotKey(order, cancelled)
+                        + " (message " + messageId + ")");
+                return 0;
+            }
         }
         JsonObject payload = new KotPayloadBuilder(r, com.magilhub.printnats.rules.PrintDates.systemDefault())
                 .kot(order, tableName, cancelled);

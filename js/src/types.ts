@@ -63,6 +63,11 @@ export interface PrintNatsConfig {
   devices?: unknown[];
   /** Android: restart printing after reboot. */
   autoStartOnBoot?: boolean;
+  /**
+   * The host prints its own KOTs when orders are created (maghilOrder, online and offline): drop a later NATS/FCM
+   * KOT for the same order + batch instead of printing it twice. Default false.
+   */
+  suppressNatsKotAfterHostPrint?: boolean;
 }
 
 export interface PrinterHealth {

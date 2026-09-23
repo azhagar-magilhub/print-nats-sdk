@@ -1,12 +1,16 @@
 // React Native bridge for print-nats-sdk. Autolinked into the host app, where React Native is available.
 // Works with the old bridge (RN 0.63) and New Architecture interop (RN 0.76).
 buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:3.5.4'
+    // Only when built on its own (compile check in print-nats-sdk); inside a host app the host's AGP is used —
+    // pinning 3.5.4 here would clash with an AGP 8 host (maghilOrder).
+    if (project == rootProject || rootProject.name == 'print-nats-sdk') {
+        repositories {
+            google()
+            mavenCentral()
+        }
+        dependencies {
+            classpath 'com.android.tools.build:gradle:3.5.4'
+        }
     }
 }
 
@@ -16,7 +20,21 @@ def safeExtGet(prop, fallback) {
     rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
 }
 
+// AGP 7+ has android.namespace and AGP 8 rejects manifest package=; AGP 3.5 (MerchantApp) needs the package attribute.
+// Same detection as other RN libraries (no com.android.Version on AGP 3.5).
+def supportsNamespace() {
+    return project.android.hasProperty('namespace')
+}
+
 android {
+    if (supportsNamespace()) {
+        namespace "com.magilhub.printnats.rn"
+        sourceSets {
+            main {
+                manifest.srcFile "src/main/AndroidManifestNew.xml"
+            }
+        }
+    }
     compileSdkVersion safeExtGet('compileSdkVersion', 31)
     defaultConfig {
         minSdkVersion safeExtGet('minSdkVersion', 24)

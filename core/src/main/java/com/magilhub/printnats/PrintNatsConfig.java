@@ -37,6 +37,8 @@ public final class PrintNatsConfig {
      */
     public com.google.gson.JsonArray devices;
     public boolean autoStartOnBoot;
+    /** See PrintPipeline#setSuppressNatsKotAfterHostPrint (maghilOrder: true). */
+    public boolean suppressNatsKotAfterHostPrint;
     /** Printer IPs found by MAC rediscovery that the backend device list doesn't reflect yet. */
     public com.magilhub.printnats.discovery.IpOverrides ipOverrides;
 
@@ -73,6 +75,7 @@ public final class PrintNatsConfig {
         PrintNats.Builder b = PrintNats.builder().session(session).restaurant(restaurant).printers(printers)
                 .ipOverrides(ipOverrides);
         if (nats != null && nats.serverUrls != null && !nats.serverUrls.isEmpty()) b.nats(nats);
+        b.suppressNatsKotAfterHostPrint(suppressNatsKotAfterHostPrint);
         return b;
     }
 }

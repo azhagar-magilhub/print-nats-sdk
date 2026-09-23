@@ -149,6 +149,7 @@ public final class PrintNats {
             }
         }, new Restaurant(b.restaurant), b.session, log, listener);
         holder.pipeline = pipeline;
+        pipeline.setSuppressNatsKotAfterHostPrint(b.suppressNatsKotAfterHostPrint);
 
         final com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener hostHook = b.addressHook;
         this.rediscovery = new com.magilhub.printnats.discovery.PrinterRediscovery(
@@ -456,6 +457,14 @@ public final class PrintNats {
         private com.magilhub.printnats.spi.ArpTable arpTable;
         private com.magilhub.printnats.discovery.MacLocator macLocator;
         private com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener addressHook;
+
+        private boolean suppressNatsKotAfterHostPrint;
+
+        /** Drop NATS/FCM KOTs for an order + batch this device already printed itself (maghilOrder). */
+        public Builder suppressNatsKotAfterHostPrint(boolean suppress) {
+            this.suppressNatsKotAfterHostPrint = suppress;
+            return this;
+        }
 
         /** Rediscovered IPs restored from the host's saved config. */
         public Builder ipOverrides(com.magilhub.printnats.discovery.IpOverrides o) {
