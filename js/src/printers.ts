@@ -51,6 +51,11 @@ export function toPrinterConfigs(
   return out;
 }
 
+/** One device row (or an unsaved Setup-form draft) as a PrinterConfig — for testPrint / printerStatus. */
+export function printerConfigForDevice(p: MerchantDevice, tagId?: string, stationName = '-'): PrinterConfig {
+  return row(p, 0, tagId, p.printTo === 'RECEIPT' ? 'Receipt printer' : stationName);
+}
+
 function row(p: MerchantDevice, kotSpace: number, tagId: string | undefined, stationName: string): PrinterConfig {
   const isStar = p.isStarPrinter === 1;
   const name = isStar ? 'SP742 (STR-001)' : p.deviceName ?? '';

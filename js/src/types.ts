@@ -187,6 +187,12 @@ export interface PrintNatsApi {
    */
   submitMessage(messageType: string, messageData: string, messageId: string): Promise<boolean>;
 
+  /**
+   * Test print on one printer — the same renderer/transport as real KOTs (Star printers get Star commands, not
+   * ESC/POS). Works for printers not saved yet (Setup form). Not queued.
+   */
+  testPrint(printer: PrinterConfig): Promise<{ ok: boolean; message?: string | null }>;
+
   /** Printer IP rediscovery: save `newAddress` to the backend (legacy updateIPAddress → EditPrinter). */
   onPrinterAddressChanged(cb: (e: PrinterAddressEvent) => void): Unsubscribe;
   /** Rediscoveries made while no UI was listening (e.g. app killed) — sync these on start. */

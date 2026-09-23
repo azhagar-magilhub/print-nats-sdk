@@ -7,7 +7,7 @@ import {
 } from './types';
 
 export * from './types';
-export { toPrinterConfigs, isMasterDevice, backendAddressUpdates, addressEventToOverrides } from './printers';
+export { toPrinterConfigs, printerConfigForDevice, isMasterDevice, backendAddressUpdates, addressEventToOverrides } from './printers';
 
 interface SidecarInfo {
   port: number;
@@ -112,6 +112,7 @@ export const PrintNats: PrintNatsApi = {
   onConnectionEvent: (cb: (e: ConnectionEvent) => void) => listen('connection', cb),
   onPrinterAddressChanged: (cb: (e: PrinterAddressEvent) => void) => listen('printer-address', cb),
   getIpOverrides: () => call<IpOverrides>('printers/ip-overrides'),
+  testPrint: (printer: PrinterConfig) => call<{ ok: boolean; message?: string | null }>('printers/test', printer),
   submitMessage: (messageType: string, messageData: string, messageId: string) =>
     call<boolean>('messages/submit', { messageType, messageData, messageId }),
 };

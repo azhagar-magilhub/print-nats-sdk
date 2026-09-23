@@ -5,7 +5,7 @@ import {
 } from './types';
 
 export * from './types';
-export { toPrinterConfigs, isMasterDevice, backendAddressUpdates, addressEventToOverrides } from './printers';
+export { toPrinterConfigs, printerConfigForDevice, isMasterDevice, backendAddressUpdates, addressEventToOverrides } from './printers';
 
 const Native = NativeModules.PrintNats;
 const emitter = Native ? new NativeEventEmitter(Native) : null;
@@ -84,6 +84,7 @@ export const PrintNats: PrintNatsApi = {
       (raw) => ({ printerIds: JSON.parse(raw.printerIds), oldAddress: raw.oldAddress, newAddress: raw.newAddress }),
       cb,
     ),
+  testPrint: (printer) => requireNative().testPrint(JSON.stringify(printer)),
   submitMessage: (messageType, messageData, messageId) =>
     requireNative().submitMessage(messageType, messageData, messageId),
   async getIpOverrides(): Promise<IpOverrides> {

@@ -256,6 +256,30 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
 
     // ---- Failed Print Queue -------------------------------------------------------------------------
 
+    /** Test print on one printer (JSON PrinterConfig) — Star via StarIO, thermal ESC/POS; resolves {ok, message}. */
+    @ReactMethod
+    public void testPrint(final String printerJson, final Promise promise) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    com.magilhub.printnats.queue.PrinterConfig p =
+                            GSON.fromJson(printerJson, com.magilhub.printnats.queue.PrinterConfig.class);
+                    if (p.connection == null) p.connection = com.magilhub.printnats.queue.PrinterConfig.Connection.LAN;
+                    if (p.purpose == null) p.purpose = com.magilhub.printnats.queue.PrinterConfig.Purpose.RECEIPT;
+                    if (p.port == 0) p.port = 9100;
+                    com.magilhub.printnats.queue.PrintResult r = sdk().testPrint(p);
+                    WritableMap m = Arguments.createMap();
+                    m.putBoolean("ok", r.outcome == com.magilhub.printnats.queue.PrintOutcome.SUCCESS);
+                    m.putString("message", r.message);
+                    promise.resolve(m);
+                } catch (Throwable t) {
+                    promise.reject("E_TEST_PRINT", t);
+                }
+            }
+        }, "print-nats-test").start();
+    }
+
     /** Print message received over FCM (receipt requests, KOT copies) — deduplicated against NATS natively. */
     @ReactMethod
     public void submitMessage(final String messageType, final String messageData, final String messageId, final Promise promise) {

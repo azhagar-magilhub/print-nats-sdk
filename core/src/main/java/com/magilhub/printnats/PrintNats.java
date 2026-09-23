@@ -68,6 +68,7 @@ public final class PrintNats {
     private volatile boolean masterRole;
     private final LogSink logSink;
     private final com.magilhub.printnats.discovery.IpOverrides ipOverrides;
+    private final TicketRenderer renderer;
     private final com.magilhub.printnats.discovery.PrinterRediscovery rediscovery;
 
     private PrintNats(Builder b) {
@@ -105,6 +106,7 @@ public final class PrintNats {
             }
         };
         TicketRenderer renderer = new DefaultTicketRenderer(b.starEncoder, b.receiptRenderer, log);
+        this.renderer = renderer;
         this.transport = b.transport;
         this.queue = new PrintQueue(b.jobStore, lookup, renderer, b.transport, log);
         this.orders = new OrderLookup(b.http, b.session, log);
@@ -392,6 +394,75 @@ public final class PrintNats {
      */
     public boolean submitMessage(String messageType, String messageDataJson, String messageId) {
         return pipeline.onHostMessage(messageType, messageDataJson, messageId);
+    }
+
+    /**
+     * Test print on one printer (legacy PrintFramework.testPrint): a short sample ticket through the same renderer and
+     * transport as real KOTs — Star printers get Star commands via StarIO, thermal printers ESC/POS — sent directly
+     * (not queued, never in the Failed Print Queue). The printer need not be in the configured list (Setup form).
+     */
+    public com.magilhub.printnats.queue.PrintResult testPrint(PrinterConfig printer) {
+        long now = System.currentTimeMillis();
+        PrintJob job = new PrintJob();
+        job.jobId = "test-" + now;
+        job.kind = com.magilhub.printnats.queue.JobKind.TEST;
+        job.printerId = printer.id;
+        job.isStation = false;
+        job.payloadJson = testTicket(printer, now).toString();
+        com.magilhub.printnats.render.RenderResult rendered;
+        try {
+            rendered = renderer.render(job, printer, now);
+        } catch (RuntimeException e) {
+            return new com.magilhub.printnats.queue.PrintResult(com.magilhub.printnats.queue.PrintOutcome.FAULT, "Test print render failed: " + e);
+        }
+        if (rendered.isSkipped()) {
+            return new com.magilhub.printnats.queue.PrintResult(com.magilhub.printnats.queue.PrintOutcome.FAULT, "Test print skipped: " + rendered.skipReason);
+        }
+        com.magilhub.printnats.queue.PrintResult r = transport.send(printer, rendered.bytes);
+        if (logSink != null) {
+            logSink.append("test_Print_", "Test print " + printer.address + " star=" + printer.isStar + " → " + r.outcome
+                    + (r.message == null ? "" : " " + r.message));
+        }
+        return r;
+    }
+
+    static JsonObject testTicket(PrinterConfig printer, long now) {
+        java.util.Date d = new java.util.Date(now);
+        JsonObject r = new JsonObject();
+        r.addProperty("templateNo", "3");
+        r.addProperty("currentDate", new java.text.SimpleDateFormat("MM/dd/yy", java.util.Locale.US).format(d));
+        r.addProperty("currentTime", new java.text.SimpleDateFormat("hh:mm a", java.util.Locale.US).format(d));
+        r.addProperty("currentFormattedDate", new java.text.SimpleDateFormat("ddMMMhh:mma", java.util.Locale.US).format(d));
+        r.addProperty("orderNo", "TEST");
+        r.addProperty("orderDate", new java.text.SimpleDateFormat("MM/dd/yyyy", java.util.Locale.US).format(d));
+        r.addProperty("orderTime", new java.text.SimpleDateFormat("hh:mm:ss a", java.util.Locale.US).format(d));
+        r.addProperty("orderTypeGroup", "Test Print");
+        r.addProperty("orderType", "T");
+        r.addProperty("isAutoPrint", true);
+        r.addProperty("isPaymentDone", true);
+        r.addProperty("kotFont", "2");
+        r.addProperty("kotFontStyle", "");
+        r.addProperty("kotAlignmenet", "TEXT_ALIGN_LEFT");
+        r.addProperty("showUpperCaseItemName", "true");
+        r.addProperty("showStationName", "true");
+        r.addProperty("showBatchNote", "false");
+        r.addProperty("stationName", printer.resolvedStationName());
+        com.google.gson.JsonArray items = new com.google.gson.JsonArray();
+        String[] lines = {"Printer test OK", (printer.name == null || printer.name.isEmpty() ? "Printer" : printer.name),
+                printer.address == null ? "" : printer.address};
+        for (String line : lines) {
+            if (line.isEmpty()) continue;
+            JsonObject it = new JsonObject();
+            it.addProperty("quantity", "1");
+            it.addProperty("itemName", line);
+            it.addProperty("categoryName", "Test");
+            items.add(it);
+        }
+        r.add("items", items);
+        JsonObject footer = new JsonObject();
+        footer.addProperty("line1", "Test print");
+        r.add("footer", footer);
+        return r;
     }
 
     /** Pre-built receipt JSON (legacy printReceiptJson). */

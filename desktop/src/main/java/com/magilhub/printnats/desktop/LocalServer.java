@@ -246,6 +246,15 @@ public final class LocalServer {
             }
             case "print/eod":
                 return host.sdk().printEod(json.getAsJsonObject().get("eod").toString());
+            case "printers/test": {
+                com.magilhub.printnats.queue.PrinterConfig p = new com.google.gson.Gson().fromJson(json,
+                        com.magilhub.printnats.queue.PrinterConfig.class);
+                com.magilhub.printnats.queue.PrintResult r = host.sdk().testPrint(p);
+                JsonObject o = new JsonObject();
+                o.addProperty("ok", r.outcome == com.magilhub.printnats.queue.PrintOutcome.SUCCESS);
+                o.addProperty("message", r.message);
+                return o;
+            }
             case "messages/submit":
                 return host.sdk().submitMessage(str(json, "messageType"), str(json, "messageData"), str(json, "messageId"));
             case "printers/ip-overrides":
