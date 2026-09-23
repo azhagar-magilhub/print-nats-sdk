@@ -13,7 +13,8 @@ import java.util.Map;
  * {@link LanThermalTransport} (legacy status checks), LAN Star → plain {@link TcpPrinterTransport} until a platform
  * registers a Star transport.
  */
-public final class RoutingTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe {
+public final class RoutingTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe,
+        com.magilhub.printnats.spi.PacedTransport {
     private final Map<PrinterConfig.Connection, PrinterTransport> byConnection = new EnumMap<>(PrinterConfig.Connection.class);
     private final Map<PrinterConfig.Connection, PrinterTransport> starByConnection = new EnumMap<>(PrinterConfig.Connection.class);
 
@@ -22,6 +23,7 @@ public final class RoutingTransport implements PrinterTransport, com.magilhub.pr
     }
 
     public RoutingTransport(com.magilhub.printnats.spi.LogSink log) {
+        pacedLan = new PacedTcpTransport(log);
         byConnection.put(PrinterConfig.Connection.LAN, new LanThermalTransport(log));
         starByConnection.put(PrinterConfig.Connection.LAN, new TcpPrinterTransport());
     }
@@ -38,6 +40,26 @@ public final class RoutingTransport implements PrinterTransport, com.magilhub.pr
     }
 
     private final PrinterTransport rawLan = new TcpPrinterTransport(300, 3000);
+    private final PacedTcpTransport pacedLan;
+
+    /**
+     * Paced jobs (receipts / EOD) take the legacy printReceiptJson route: the ESC/POS connection for the printer's
+     * connection type EVEN for Star printers (legacy sent receipt raster over raw TCP / USB / Bluetooth, not StarIO);
+     * LAN = {@link PacedTcpTransport}. Transports that can't pace get the bytes in one write.
+     */
+    @Override
+    public PrintResult sendPaced(PrinterConfig printer, byte[] data, int[] chunkEnds, int[] addWaitMs) {
+        if (printer.connection == PrinterConfig.Connection.LAN) return pacedLan.sendPaced(printer, data, chunkEnds, addWaitMs);
+        PrinterTransport t = byConnection.get(printer.connection);
+        if (t == null) t = starByConnection.get(printer.connection);
+        if (t == null) {
+            return new PrintResult(PrintOutcome.FAULT, "No transport for " + printer.connection + " printers on this platform");
+        }
+        if (t instanceof com.magilhub.printnats.spi.PacedTransport) {
+            return ((com.magilhub.printnats.spi.PacedTransport) t).sendPaced(printer, data, chunkEnds, addWaitMs);
+        }
+        return t.send(printer, data);
+    }
 
     /** Health via the printer's own transport when it can probe; otherwise "unknown" (reachable, unsupported). */
     @Override

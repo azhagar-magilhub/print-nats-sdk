@@ -10,7 +10,8 @@ import com.magilhub.printnats.queue.PrinterConfig;
 import com.magilhub.printnats.spi.PrinterTransport;
 
 /** Bonded Bluetooth thermal printers by MAC address; messages match legacy PrintFrameworkModule. */
-public final class BluetoothThermalTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe {
+public final class BluetoothThermalTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe,
+        com.magilhub.printnats.spi.PacedTransport {
     /** Adapter on + printer bonded (no status channel on this path). */
     @Override
     @SuppressWarnings("MissingPermission")
@@ -31,9 +32,19 @@ public final class BluetoothThermalTransport implements PrinterTransport, com.ma
         }
     }
 
+    /** Legacy DantSu pacing: each chunk through the real connection's {@code send(addWaitingTime)}. */
     @Override
-    @SuppressWarnings("MissingPermission")
+    public PrintResult sendPaced(PrinterConfig printer, byte[] data, int[] chunkEnds, int[] addWaitMs) {
+        return send(printer, data, chunkEnds, addWaitMs);
+    }
+
+    @Override
     public PrintResult send(PrinterConfig printer, byte[] data) {
+        return send(printer, data, new int[]{data.length}, new int[]{0});
+    }
+
+    @SuppressWarnings("MissingPermission")
+    private PrintResult send(PrinterConfig printer, byte[] data, int[] chunkEnds, int[] addWaitMs) {
         BluetoothConnection connection;
         try {
             BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
@@ -53,8 +64,17 @@ public final class BluetoothThermalTransport implements PrinterTransport, com.ma
             return new PrintResult(PrintOutcome.CONNECTION_FAILED, "Unable to connect to printer while preparing the print job.");
         }
         try {
-            connection.write(data);
-            connection.send();
+            int start = 0;
+            for (int i = 0; i < chunkEnds.length; i++) {
+                int end = Math.min(chunkEnds[i], data.length);
+                connection.write(java.util.Arrays.copyOfRange(data, start, Math.max(start, end)));
+                connection.send(addWaitMs[i]); // sleeps addWaitMs + length/16, like legacy
+                start = Math.max(start, end);
+            }
+            if (start < data.length) {
+                connection.write(java.util.Arrays.copyOfRange(data, start, data.length));
+                connection.send();
+            }
             return PrintResult.success();
         } catch (Exception e) {
             return new PrintResult(PrintOutcome.AMBIGUOUS, "Failed to send data to printer.");

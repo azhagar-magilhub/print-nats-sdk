@@ -319,10 +319,14 @@ public final class PrintQueue {
         }
 
         final byte[] bytes = rendered.bytes;
+        final RenderResult paced = rendered.isPaced() && transport instanceof com.magilhub.printnats.spi.PacedTransport ? rendered : null;
         PrintResult result;
         Future<PrintResult> f = sendExecutor.submit(new java.util.concurrent.Callable<PrintResult>() {
             @Override
             public PrintResult call() {
+                if (paced != null) {
+                    return ((com.magilhub.printnats.spi.PacedTransport) transport).sendPaced(printer, bytes, paced.chunkEnds, paced.chunkWaitsMs);
+                }
                 return transport.send(printer, bytes);
             }
         });

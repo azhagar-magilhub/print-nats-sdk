@@ -40,9 +40,14 @@ public final class LegacyReceiptRenderer implements ReceiptRenderer {
         this.context = context.getApplicationContext();
     }
 
-    /** Captures everything the legacy code writes (sent + still buffered). */
+    /**
+     * Captures everything the legacy code writes (sent + still buffered) AND where it paused: every
+     * {@code send(addWaitingTime)} is a chunk boundary, replayed by the transport with the same
+     * {@code addWaitingTime + length/16} ms pause the live DantSu connection slept.
+     */
     static final class CaptureConnection extends DeviceConnection {
         private final ByteArrayOutputStream sent = new ByteArrayOutputStream();
+        private final java.util.List<int[]> chunks = new java.util.ArrayList<>(); // {end, addWaitMs}
 
         @Override
         public DeviceConnection connect() {
@@ -57,9 +62,27 @@ public final class LegacyReceiptRenderer implements ReceiptRenderer {
 
         @Override
         public void send(int addWaitingTime) {
-            // no pacing sleeps while rendering into memory
+            // no sleeping while rendering into memory — the pause is recorded and replayed by the transport
             sent.write(data, 0, data.length);
             data = new byte[0];
+            chunks.add(new int[]{sent.size(), addWaitingTime});
+        }
+
+        /** A pause with no bytes (legacy AsyncEscPosPrint: Thread.sleep(500) after each text). */
+        void pause(int ms) {
+            chunks.add(new int[]{sent.size(), ms});
+        }
+
+        int[] chunkEnds() {
+            int[] out = new int[chunks.size()];
+            for (int i = 0; i < out.length; i++) out[i] = chunks.get(i)[0];
+            return out;
+        }
+
+        int[] chunkWaits() {
+            int[] out = new int[chunks.size()];
+            for (int i = 0; i < out.length; i++) out[i] = chunks.get(i)[1];
+            return out;
         }
 
         byte[] all() {
@@ -90,7 +113,7 @@ public final class LegacyReceiptRenderer implements ReceiptRenderer {
         }
         byte[] bytes = capture.all();
         if (bytes.length == 0) return RenderResult.skipped("receipt rendered no output");
-        return RenderResult.bytes(bytes, text ? "receipt-text" : "receipt-image", 0);
+        return RenderResult.paced(bytes, text ? "receipt-text" : "receipt-image", capture.chunkEnds(), capture.chunkWaits());
     }
 
     private RenderResult renderEod(JsonObject payload, PrinterConfig printer) {
@@ -113,7 +136,8 @@ public final class LegacyReceiptRenderer implements ReceiptRenderer {
             throw new IllegalStateException("EOD render failed: " + e, e);
         }
         byte[] bytes = capture.all();
-        return bytes.length == 0 ? RenderResult.skipped("EOD rendered no output") : RenderResult.bytes(bytes, "eod", 0);
+        return bytes.length == 0 ? RenderResult.skipped("EOD rendered no output")
+                : RenderResult.paced(bytes, "eod", capture.chunkEnds(), capture.chunkWaits());
     }
 
     /** What AsyncEscPosPrint.doInBackground does with any formatted text the builder queued. */
@@ -121,6 +145,9 @@ public final class LegacyReceiptRenderer implements ReceiptRenderer {
         if (p == null || p.getTextsToPrint().length == 0) return;
         EscPosPrinter printer = new EscPosPrinter(capture, p.getPrinterDpi(), p.getPrinterWidthMM(),
                 p.getPrinterNbrCharactersPerLine(), new EscPosCharsetEncoding("windows-1252", 16));
-        for (String text : p.getTextsToPrint()) printer.printFormattedTextAndCut(text);
+        for (String text : p.getTextsToPrint()) {
+            printer.printFormattedTextAndCut(text);
+            capture.pause(500); // AsyncEscPosPrint.doInBackground: Thread.sleep(500) before the next text / disconnect
+        }
     }
 }

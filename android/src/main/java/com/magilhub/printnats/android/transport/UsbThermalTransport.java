@@ -15,7 +15,8 @@ import com.magilhub.printnats.spi.PrinterTransport;
  * already be granted from the UI (a background service cannot show the dialog); messages match legacy
  * PrintFrameworkModule/USBUtil so the Failed Print Queue categorises them the same way.
  */
-public final class UsbThermalTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe {
+public final class UsbThermalTransport implements PrinterTransport, com.magilhub.printnats.spi.PrinterProbe,
+        com.magilhub.printnats.spi.PacedTransport {
     private final Context context;
 
     public UsbThermalTransport(Context context) {
@@ -36,8 +37,18 @@ public final class UsbThermalTransport implements PrinterTransport, com.magilhub
         return h;
     }
 
+    /** Legacy DantSu pacing: each chunk through the real connection's {@code send(addWaitingTime)}. */
+    @Override
+    public PrintResult sendPaced(PrinterConfig printer, byte[] data, int[] chunkEnds, int[] addWaitMs) {
+        return send(printer, data, chunkEnds, addWaitMs);
+    }
+
     @Override
     public PrintResult send(PrinterConfig printer, byte[] data) {
+        return send(printer, data, new int[]{data.length}, new int[]{0});
+    }
+
+    private PrintResult send(PrinterConfig printer, byte[] data, int[] chunkEnds, int[] addWaitMs) {
         UsbManager usb = (UsbManager) context.getSystemService(Context.USB_SERVICE);
         UsbDevice device = find(usb, printer.address);
         if (device == null) return new PrintResult(PrintOutcome.FAULT, "No USB printer reachable");
@@ -51,8 +62,17 @@ public final class UsbThermalTransport implements PrinterTransport, com.magilhub
             return new PrintResult(PrintOutcome.CONNECTION_FAILED, "Unable to connect to printer while preparing the print job.");
         }
         try {
-            connection.write(data);
-            connection.send();
+            int start = 0;
+            for (int i = 0; i < chunkEnds.length; i++) {
+                int end = Math.min(chunkEnds[i], data.length);
+                connection.write(java.util.Arrays.copyOfRange(data, start, Math.max(start, end)));
+                connection.send(addWaitMs[i]); // sleeps addWaitMs + length/16, like legacy
+                start = Math.max(start, end);
+            }
+            if (start < data.length) {
+                connection.write(java.util.Arrays.copyOfRange(data, start, data.length));
+                connection.send();
+            }
             return PrintResult.success();
         } catch (Exception e) {
             return new PrintResult(PrintOutcome.AMBIGUOUS, "USB printer not responding");
