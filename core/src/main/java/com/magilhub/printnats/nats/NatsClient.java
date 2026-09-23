@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.nats.client.Connection;
+import io.nats.client.Dispatcher;
 import io.nats.client.ConnectionListener;
 import io.nats.client.ErrorListener;
 import io.nats.client.JetStream;
@@ -61,6 +62,26 @@ public final class NatsClient {
 
     private final com.magilhub.printnats.spi.OutboxStore outbox;
 
+    // ---- app messaging (core NATS, e.g. CartVue) — independent of the print stream -----------------------
+    private final java.util.Set<String> appSubjects = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private volatile Dispatcher appDispatcher;
+    /** Publishes made while disconnected: small, short-lived — live UI state, not jobs. */
+    private final java.util.concurrent.ConcurrentLinkedDeque<PendingCore> pendingCore = new java.util.concurrent.ConcurrentLinkedDeque<>();
+    static final int PENDING_CORE_CAP = 50;
+    static final long PENDING_CORE_MAX_AGE_MS = 60_000;
+
+    private static final class PendingCore {
+        final String subject;
+        final byte[] data;
+        final long at;
+
+        PendingCore(String subject, byte[] data, long at) {
+            this.subject = subject;
+            this.data = data;
+            this.at = at;
+        }
+    }
+
     public NatsClient(NatsConfig config, NatsEvents events, LogSink log) {
         this(config, events, log, null);
     }
@@ -96,6 +117,80 @@ public final class NatsClient {
     public boolean isConnected() {
         Connection c = connection;
         return c != null && c.getStatus() == Connection.Status.CONNECTED;
+    }
+
+    // ---- app messaging ----------------------------------------------------------------------------
+
+    /** Subscribe a core-NATS subject for the host (kept across reconnects; delivered via NatsEvents#onAppMessage). */
+    public void subscribeApp(String subject) {
+        if (subject == null || subject.isEmpty() || !appSubjects.add(subject)) return;
+        Dispatcher d = appDispatcher;
+        if (d != null) {
+            try {
+                d.subscribe(subject);
+            } catch (RuntimeException e) {
+                log.append("nats_", "app subscribe failed " + subject + ": " + e);
+            }
+        }
+    }
+
+    public void unsubscribeApp(String subject) {
+        if (subject == null || !appSubjects.remove(subject)) return;
+        Dispatcher d = appDispatcher;
+        if (d != null) {
+            try {
+                d.unsubscribe(subject);
+            } catch (RuntimeException ignored) {
+                // already gone
+            }
+        }
+    }
+
+    /**
+     * Fire-and-forget core-NATS publish (no JetStream, no ack). While disconnected the message is kept briefly
+     * (last {@value #PENDING_CORE_CAP}, at most {@value #PENDING_CORE_MAX_AGE_MS} ms old) and sent on reconnect.
+     * @return true when handed to the connection now
+     */
+    public boolean publishCore(String subject, byte[] data) {
+        Connection c = connection;
+        if (c != null && c.getStatus() == Connection.Status.CONNECTED) {
+            try {
+                c.publish(subject, data);
+                return true;
+            } catch (Throwable t) {
+                // fall through to buffering
+            }
+        }
+        pendingCore.addLast(new PendingCore(subject, data, System.currentTimeMillis()));
+        while (pendingCore.size() > PENDING_CORE_CAP) pendingCore.pollFirst();
+        return false;
+    }
+
+    private void startAppMessaging(Connection nc) {
+        Dispatcher d = nc.createDispatcher(msg -> {
+            try {
+                events.onAppMessage(msg.getSubject(), msg.getData());
+            } catch (RuntimeException e) {
+                log.append("nats_", "app message handler threw: " + e);
+            }
+        });
+        for (String s : appSubjects) d.subscribe(s);
+        appDispatcher = d;
+        flushPendingCore(nc);
+    }
+
+    private void flushPendingCore(Connection nc) {
+        long cutoff = System.currentTimeMillis() - PENDING_CORE_MAX_AGE_MS;
+        PendingCore p;
+        while ((p = pendingCore.pollFirst()) != null) {
+            if (p.at < cutoff) continue;
+            try {
+                nc.publish(p.subject, p.data);
+            } catch (Throwable t) {
+                pendingCore.addFirst(p);
+                return;
+            }
+        }
     }
 
     // ---- publishing --------------------------------------------------------------------------------
@@ -221,6 +316,7 @@ public final class NatsClient {
                             // events buffered during a blip stayed unsent until the app restarted.)
                             if (type == ConnectionListener.Events.RECONNECTED || type == ConnectionListener.Events.RESUBSCRIBED) {
                                 flushAsync();
+                                if (conn != null) flushPendingCore(conn); // dispatcher subscriptions survive a reconnect
                             }
                         })
                         .errorListener(new ErrorListener() {
@@ -241,6 +337,8 @@ public final class NatsClient {
                 Connection nc = Nats.connect(builder.build());
                 connection = nc;
                 events.onConnectionEvent("connected", String.valueOf(nc.getStatus()));
+                // App messaging first: a print-stream problem below (e.g. consumer bind) must not hold up CartVue.
+                startAppMessaging(nc);
 
                 JetStream js = nc.jetStream();
                 jetStream = js;
@@ -471,6 +569,7 @@ public final class NatsClient {
 
     private void closeConnection() {
         jetStream = null;
+        appDispatcher = null; // closed with the connection; recreated (with every app subject) on the next connect
         Connection c = connection;
         connection = null;
         if (c != null) {

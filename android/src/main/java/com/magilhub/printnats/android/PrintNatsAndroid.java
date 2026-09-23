@@ -26,6 +26,20 @@ public final class PrintNatsAndroid {
     private static PrintNats instance;
     private static PrintNats.Listener listener;
     private static ReceiptRenderer receiptRenderer;
+    /** App (core NATS) subjects the host subscribed to — re-applied to every rebuilt instance (configure / restart). */
+    private static final java.util.Set<String> appSubjects = new java.util.LinkedHashSet<>();
+
+    public static synchronized void subscribeApp(Context context, String subject) {
+        appSubjects.add(subject);
+        PrintNats s = get(context);
+        if (s != null) s.subscribeApp(subject);
+    }
+
+    public static synchronized void unsubscribeApp(Context context, String subject) {
+        appSubjects.remove(subject);
+        PrintNats s = get(context);
+        if (s != null) s.unsubscribeApp(subject);
+    }
 
     private PrintNatsAndroid() {
     }
@@ -45,6 +59,7 @@ public final class PrintNatsAndroid {
         prefs(context).edit().putString(KEY_CONFIG, config.toJson()).apply();
         if (instance != null) instance.stop();
         instance = build(context, config);
+        for (String subject : appSubjects) instance.subscribeApp(subject);
         instance.start();
         return instance;
     }
@@ -55,6 +70,7 @@ public final class PrintNatsAndroid {
             PrintNatsConfig c = savedConfig(context);
             if (c == null) return null;
             instance = build(context, c);
+            for (String subject : appSubjects) instance.subscribeApp(subject);
             instance.start();
         }
         return instance;

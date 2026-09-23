@@ -95,6 +95,14 @@ public final class LocalServer {
                 p.addProperty("newAddress", newAddress);
                 broadcast("printer-address", p);
             }
+
+            @Override
+            public void onAppMessage(String subject, byte[] data) {
+                JsonObject p = new JsonObject();
+                p.addProperty("subject", subject);
+                p.addProperty("data", new String(data, java.nio.charset.StandardCharsets.UTF_8));
+                broadcast("app-message", p);
+            }
         });
     }
 
@@ -255,6 +263,15 @@ public final class LocalServer {
                 o.addProperty("message", r.message);
                 return o;
             }
+            case "app/publish":
+                return host.sdk().publishApp(str(json, "subject"),
+                        String.valueOf(str(json, "data")).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            case "app/subscribe":
+                host.sdk().subscribeApp(str(json, "subject"));
+                return true;
+            case "app/unsubscribe":
+                host.sdk().unsubscribeApp(str(json, "subject"));
+                return true;
             case "messages/submit":
                 return host.sdk().submitMessage(str(json, "messageType"), str(json, "messageData"), str(json, "messageId"));
             case "printers/ip-overrides":

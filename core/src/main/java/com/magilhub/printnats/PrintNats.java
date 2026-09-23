@@ -55,6 +55,10 @@ public final class PrintNats {
         @Override
         default void onPrinterAddressChanged(List<String> printerIds, String oldAddress, String newAddress) {
         }
+
+        /** Core-NATS message on a subject subscribed with {@link #subscribeApp} (e.g. CartVue). */
+        default void onAppMessage(String subject, byte[] data) {
+        }
     }
 
     private final NatsClient nats;
@@ -133,6 +137,11 @@ public final class PrintNats {
             @Override
             public void onConnectionEvent(String type, String detail) {
                 holder.pipeline.onConnectionEvent(type, detail);
+            }
+
+            @Override
+            public void onAppMessage(String subject, byte[] data) {
+                if (listener != null) listener.onAppMessage(subject, data);
             }
         }, log, b.outboxStore);
         this.status = new StatusPublisher(nats == null ? new NatsClient(new NatsConfig(), null, log) : nats, lookup, log,
@@ -500,6 +509,22 @@ public final class PrintNats {
     /** Advanced tuning (breaker, manual-retry budget) — see docs/parity-matrix.md. */
     public PrintQueue queue() {
         return queue;
+    }
+
+    // ---- app messaging (core NATS) -----------------------------------------------------------------------
+
+    /** Fire-and-forget publish on any subject (e.g. {@code cartvue.<loc>.<device>}); briefly buffered offline. */
+    public boolean publishApp(String subject, byte[] data) {
+        return nats != null && nats.publishCore(subject, data);
+    }
+
+    /** Receive messages on {@code subject} via {@link Listener#onAppMessage}; survives reconnects. */
+    public void subscribeApp(String subject) {
+        if (nats != null) nats.subscribeApp(subject);
+    }
+
+    public void unsubscribeApp(String subject) {
+        if (nats != null) nats.unsubscribeApp(subject);
     }
 
     public boolean isNatsConnected() {

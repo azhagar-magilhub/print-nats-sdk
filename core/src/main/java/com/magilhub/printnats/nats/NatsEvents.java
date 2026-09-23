@@ -12,4 +12,8 @@ public interface NatsEvents {
 
     /** "connecting", "connected", "subscribed", "connect_failed", "retrying", "disconnected", … */
     void onConnectionEvent(String type, String detail);
+
+    /** Core-NATS message on a subject the host subscribed with {@link NatsClient#subscribeApp} (e.g. CartVue). */
+    default void onAppMessage(String subject, byte[] data) {
+    }
 }

@@ -3,7 +3,7 @@
 // the shell (Electron main / NW.js) passes in via window.__PRINT_NATS__ = { port, token } (or reads it from the
 // sidecar's <dataDir>/endpoint.json when the sidecar runs as a Windows service).
 import {
-  ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
+  AppMessage, ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
 } from './types';
 
 export * from './types';
@@ -112,6 +112,14 @@ export const PrintNats: PrintNatsApi = {
   onConnectionEvent: (cb: (e: ConnectionEvent) => void) => listen('connection', cb),
   onPrinterAddressChanged: (cb: (e: PrinterAddressEvent) => void) => listen('printer-address', cb),
   getIpOverrides: () => call<IpOverrides>('printers/ip-overrides'),
+  publish: (subject: string, data: string) => call<boolean>('app/publish', { subject, data }),
+  async subscribe(subject: string) {
+    await call<boolean>('app/subscribe', { subject });
+  },
+  async unsubscribe(subject: string) {
+    await call<boolean>('app/unsubscribe', { subject });
+  },
+  onAppMessage: (cb: (m: AppMessage) => void) => listen('app-message', cb),
   testPrint: (printer: PrinterConfig) => call<{ ok: boolean; message?: string | null }>('printers/test', printer),
   submitMessage: (messageType: string, messageData: string, messageId: string) =>
     call<boolean>('messages/submit', { messageType, messageData, messageId }),

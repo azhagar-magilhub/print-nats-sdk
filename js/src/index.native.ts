@@ -1,7 +1,7 @@
 // React Native (Android): bridge to com.magilhub.printnats.rn.PrintNatsModule.
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import {
-  ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
+  AppMessage, ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
 } from './types';
 
 export * from './types';
@@ -85,6 +85,15 @@ export const PrintNats: PrintNatsApi = {
       cb,
     ),
   testPrint: (printer) => requireNative().testPrint(JSON.stringify(printer)),
+  publish: (subject, data) => requireNative().publish(subject, data),
+  async subscribe(subject) {
+    await requireNative().subscribe(subject);
+  },
+  async unsubscribe(subject) {
+    await requireNative().unsubscribe(subject);
+  },
+  onAppMessage: (cb: (m: AppMessage) => void) =>
+    listen('PrintNatsAppMessage', (raw) => ({ subject: raw.subject, data: raw.data }), cb),
   submitMessage: (messageType, messageData, messageId) =>
     requireNative().submitMessage(messageType, messageData, messageId),
   async getIpOverrides(): Promise<IpOverrides> {

@@ -34,6 +34,7 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     static final String EVENT_STATUS = "PrintNatsStatusEvent";
     static final String EVENT_CONNECTION = "PrintNatsConnectionEvent";
     static final String EVENT_PRINTER_ADDRESS = "PrintNatsPrinterAddressEvent";
+    static final String EVENT_APP_MESSAGE = "PrintNatsAppMessage";
     private static final Gson GSON = new Gson();
 
     private final ReactApplicationContext context;
@@ -74,6 +75,14 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
                 m.putString("oldAddress", oldAddress);
                 m.putString("newAddress", newAddress);
                 emit(EVENT_PRINTER_ADDRESS, m);
+            }
+
+            @Override
+            public void onAppMessage(String subject, byte[] data) {
+                WritableMap m = Arguments.createMap();
+                m.putString("subject", subject);
+                m.putString("data", new String(data, StandardCharsets.UTF_8));
+                emit(EVENT_APP_MESSAGE, m);
             }
         });
     }
@@ -255,6 +264,38 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     }
 
     // ---- Failed Print Queue -------------------------------------------------------------------------
+
+    /** App messaging (core NATS, e.g. CartVue): fire-and-forget publish; resolves true when sent now. */
+    @ReactMethod
+    public void publish(String subject, String data, Promise promise) {
+        try {
+            promise.resolve(sdk().publishApp(subject, data.getBytes(StandardCharsets.UTF_8)));
+        } catch (Throwable t) {
+            promise.reject("E_PUBLISH", t);
+        }
+    }
+
+    /** Receive messages on subject as PrintNatsAppMessage events; kept across reconnects and SDK rebuilds. */
+    @ReactMethod
+    public void subscribe(String subject, Promise promise) {
+        try {
+            sdk(); // configured check
+            PrintNatsAndroid.subscribeApp(context, subject);
+            promise.resolve(true);
+        } catch (Throwable t) {
+            promise.reject("E_SUBSCRIBE", t);
+        }
+    }
+
+    @ReactMethod
+    public void unsubscribe(String subject, Promise promise) {
+        try {
+            PrintNatsAndroid.unsubscribeApp(context, subject);
+            promise.resolve(true);
+        } catch (Throwable t) {
+            promise.reject("E_UNSUBSCRIBE", t);
+        }
+    }
 
     /** Test print on one printer (JSON PrinterConfig) — Star via StarIO, thermal ESC/POS; resolves {ok, message}. */
     @ReactMethod

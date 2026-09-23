@@ -136,6 +136,12 @@ export interface PrinterAddressEvent {
 /** Rediscovered IPs the backend device list doesn't reflect yet: mac → [oldIp, newIp]. */
 export type IpOverrides = Record<string, [string, string]>;
 
+/** Core-NATS message on a subject the host subscribed to (CartVue etc.). `data` is the raw payload string. */
+export interface AppMessage {
+  subject: string;
+  data: string;
+}
+
 export type Unsubscribe = () => void;
 
 /** The one API both apps use — implemented by index.native.ts (RN bridge) and index.ts (desktop sidecar). */
@@ -186,6 +192,16 @@ export interface PrintNatsApi {
    * Resolves true when it was new.
    */
   submitMessage(messageType: string, messageData: string, messageId: string): Promise<boolean>;
+
+  /**
+   * App messaging over the SDK's NATS connection — core NATS, fire-and-forget (no JetStream, no replay). Publishes
+   * made while offline are kept briefly (last 50, ≤ 60 s). Subscriptions survive reconnects. For live UI state such
+   * as the CartVue customer display (`cartvue.<locationId>.<deviceId>`).
+   */
+  publish(subject: string, data: string): Promise<boolean>;
+  subscribe(subject: string): Promise<void>;
+  unsubscribe(subject: string): Promise<void>;
+  onAppMessage(cb: (m: AppMessage) => void): Unsubscribe;
 
   /**
    * Test print on one printer — the same renderer/transport as real KOTs (Star printers get Star commands, not
