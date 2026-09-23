@@ -1,6 +1,8 @@
 package com.magilhub.printnats.render;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.magilhub.printnats.model.LenientModelAdapters;
 import com.magilhub.printnats.model.Receipt;
 import com.magilhub.printnats.queue.JobKind;
 import com.magilhub.printnats.queue.PrintJob;
@@ -12,7 +14,7 @@ import com.magilhub.printnats.spi.TicketRenderer;
 
 /** KOT → thermal ({@link ThermalKotRenderer}) or Star ({@link StarKotRenderer}); receipts → host {@link ReceiptRenderer}. */
 public final class DefaultTicketRenderer implements TicketRenderer {
-    private static final Gson GSON = new Gson();
+    private static final Gson GSON = new GsonBuilder().registerTypeAdapterFactory(new LenientModelAdapters()).create();
 
     private final StarEncoder starEncoder;
     private final ReceiptRenderer receiptRenderer;
