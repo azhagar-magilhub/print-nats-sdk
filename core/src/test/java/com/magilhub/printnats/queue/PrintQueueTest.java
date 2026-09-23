@@ -23,6 +23,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class PrintQueueTest {
+    // Tests exercise the recommended (opt-in) behaviour unless a test says "legacy default".
     private static final RetryPolicy FAST_KOT = new RetryPolicy(3, 10, true, false);
     private static final RetryPolicy FAST_RECEIPT = new RetryPolicy(5, 10, false, false);
 
@@ -256,6 +257,7 @@ public class PrintQueueTest {
         transport.will("P1", PrintResult.failure("Out of paper. Load a new paper roll."));
         queue.enqueue(job("J1", "P1"));
         awaitStatus("J1", JobStatus.FAILED);
+        queue.setResetRetriesOnManualRetry(true);
         assertTrue(queue.retry("J1"));
         awaitStatus("J1", JobStatus.SUCCESS);
         assertFalse("only FAILED jobs can be retried", queue.retry("J1"));
@@ -266,6 +268,27 @@ public class PrintQueueTest {
         assertTrue(queue.cancel("J2", "Priya"));
         assertEquals(JobStatus.CANCELLED, store.get("J2").status);
         assertEquals("Cancelled by Priya", store.get("J2").reason);
+    }
+
+    @Test
+    public void legacyDefaultsRetryAmbiguousAndNeverPausePrinter() throws Exception {
+        queue.shutdown();
+        queue = new PrintQueue(store, id -> printers.get(id),
+                (job, p, now) -> RenderResult.bytes(job.jobId.getBytes(), "t", 1), transport, null,
+                2_000, new RetryPolicy(3, 10, true, RetryPolicy.kot().retryAmbiguous), FAST_RECEIPT);
+        assertTrue("legacy default retries ambiguous sends", RetryPolicy.kot().retryAmbiguous);
+        transport.will("P1", PrintResult.failure("Failed to send data to printer."));
+        queue.enqueue(job("J1", "P1"));
+        awaitStatus("J1", JobStatus.SUCCESS);
+        assertEquals(2, transport.sent.size());
+
+        PrintResult down = new PrintResult(PrintOutcome.CONNECTION_FAILED, "Failed to connect");
+        transport.will("P1", down, down, down, down, down, down, down, down);
+        queue.enqueue(job("J2", "P1"));
+        queue.enqueue(job("J3", "P1"));
+        awaitStatus("J2", JobStatus.FAILED);
+        awaitStatus("J3", JobStatus.FAILED); // breaker off: J3 tried right away, not held
+        assertEquals(2 + 4 + 4, transport.sent.size());
     }
 
     @Test

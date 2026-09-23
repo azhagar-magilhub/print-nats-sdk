@@ -35,13 +35,15 @@ Mutation-checked: changing one byte/string in either renderer fails the suite.
 
 ### Print queue (`core/queue`, milestone 4)
 
-| # | Legacy (`PrintFrameworkModule`) | SDK `PrintQueue` |
+**Defaults = legacy behaviour.** Items 4, 5, 8 are implemented but OFF until reviewed; 6 and 7 are internal only.
+
+| # | Legacy (`PrintFrameworkModule`) | SDK option (default → recommended) |
 |---|---|---|
-| 4 | Any non-physical failure auto-retries (incl. "Failed to send data" — bytes may already have printed) | Only CONNECTION_FAILED auto-retries; AMBIGUOUS goes to the Failed queue (no duplicate tickets). `RetryPolicy.retryAmbiguous` restores legacy behaviour |
-| 5 | A dead printer: every queued KOT burns 4 attempts + timeouts | Same for the first job (timing unchanged); after 2 jobs finally fail to connect the printer pauses 60 s and later jobs wait, then print on their own when it is back |
-| 6 | Stale (45 min) KOT: nothing printed, reported as success, row deleted | Status SKIPPED with reason |
-| 7 | Success deletes the DB row | Row kept as SUCCESS (host prunes) — needed for diagnosis |
-| 8 | Manual retry keeps the retry count | Manual retry resets the retry budget |
+| 4 | Any non-physical failure auto-retries (incl. "Failed to send data" — bytes may already have printed) | `RetryPolicy.retryAmbiguous` true → **false**: possible duplicate goes to the Failed queue instead |
+| 5 | A dead printer: every queued KOT burns 4 attempts + timeouts | `PrintQueue.setBreaker(threshold, cooldown)` 0 (off) → **2, 60 s**: first job keeps legacy timing, later jobs wait and print when the printer is back |
+| 8 | Manual retry keeps the retry count | `setResetRetriesOnManualRetry` false → **true** |
+| 6 | Stale (45 min) KOT reported as success | Internal status SKIPPED; status publisher reports it as "print completed" (legacy-compatible) |
+| 7 | Success deletes the DB row | Row kept as SUCCESS for diagnosis (host prunes); not visible to staff |
 
 Unchanged: per-printer serial lanes, retry → back of that printer's lane, KOT 3× linear 1/2/3 s, receipt 5× 15 s,
 physical faults never auto-retried (incl. "printer not reachable"), 150 s watchdog, crash recovery resets

@@ -25,7 +25,7 @@ public final class CircuitBreaker {
     public synchronized void record(PrintOutcome outcome, long now) {
         if (outcome == PrintOutcome.CONNECTION_FAILED) {
             consecutiveFailures++;
-            if (consecutiveFailures >= threshold) {
+            if (threshold > 0 && consecutiveFailures >= threshold) {
                 openUntil = now + cooldownMs;
                 consecutiveFailures = 0;
             }

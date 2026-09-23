@@ -69,13 +69,23 @@ public final class PrintQueue {
         this(store, printers, renderer, transport, log, DEFAULT_WATCHDOG_MS, RetryPolicy.kot(), RetryPolicy.receipt());
     }
 
-    private volatile int breakerThreshold = 2;
+    // Behaviour changes vs the legacy app are OFF by default (not yet reviewed); see docs/parity-matrix.md.
+    private volatile int breakerThreshold = 0;
     private volatile long breakerCooldownMs = 60_000;
+    private volatile boolean resetRetriesOnManualRetry = false;
 
-    /** Circuit-breaker tuning (defaults: 2 consecutive jobs that failed to connect → 60 s pause). Call before use. */
+    /**
+     * Circuit breaker: pause a printer for {@code cooldownMs} after {@code threshold} consecutive jobs finally
+     * failed to connect. {@code threshold <= 0} disables it (default, = legacy). Recommended: 2, 60 000. Call before use.
+     */
     public void setBreaker(int threshold, long cooldownMs) {
         this.breakerThreshold = threshold;
         this.breakerCooldownMs = cooldownMs;
+    }
+
+    /** Manual retry gives a fresh auto-retry budget (legacy keeps the old count). Default false. */
+    public void setResetRetriesOnManualRetry(boolean reset) {
+        this.resetRetriesOnManualRetry = reset;
     }
 
     public void addListener(JobListener l) {
@@ -121,7 +131,7 @@ public final class PrintQueue {
         PrintJob j = store.get(jobId);
         if (j == null || j.status != JobStatus.FAILED) return false;
         j.status = JobStatus.PENDING;
-        j.retries = 0;
+        if (resetRetriesOnManualRetry) j.retries = 0;
         j.reason = null;
         j.category = null;
         j.updatedAt = System.currentTimeMillis();
@@ -183,7 +193,7 @@ public final class PrintQueue {
     private CircuitBreaker breaker(String printerId) {
         CircuitBreaker b = breakers.get(printerId);
         if (b == null) {
-            CircuitBreaker created = new CircuitBreaker(breakerThreshold, breakerCooldownMs);
+            CircuitBreaker created = new CircuitBreaker(breakerThreshold, breakerCooldownMs); // threshold<=0 → never opens
             b = breakers.putIfAbsent(printerId, created);
             if (b == null) b = created;
         }
