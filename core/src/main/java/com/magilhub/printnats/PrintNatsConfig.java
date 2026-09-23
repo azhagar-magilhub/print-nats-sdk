@@ -37,6 +37,8 @@ public final class PrintNatsConfig {
      */
     public com.google.gson.JsonArray devices;
     public boolean autoStartOnBoot;
+    /** Printer IPs found by MAC rediscovery that the backend device list doesn't reflect yet. */
+    public com.magilhub.printnats.discovery.IpOverrides ipOverrides;
 
     public static PrintNatsConfig fromJson(String json) {
         PrintNatsConfig c = GSON.fromJson(json, PrintNatsConfig.class);
@@ -67,7 +69,9 @@ public final class PrintNatsConfig {
 
     /** A builder pre-filled with this config; hosts add platform pieces (stores, transports, logs). */
     public PrintNats.Builder toBuilder() {
-        PrintNats.Builder b = PrintNats.builder().session(session).restaurant(restaurant).printers(printers);
+        if (ipOverrides == null) ipOverrides = new com.magilhub.printnats.discovery.IpOverrides();
+        PrintNats.Builder b = PrintNats.builder().session(session).restaurant(restaurant).printers(printers)
+                .ipOverrides(ipOverrides);
         if (nats != null && nats.serverUrls != null && !nats.serverUrls.isEmpty()) b.nats(nats);
         return b;
     }

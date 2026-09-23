@@ -129,7 +129,21 @@ public final class PrintNatsAndroid {
                 .dataCapDevice("pax".equalsIgnoreCase(android.os.Build.BRAND)) // JS isDataCapDevice()
                 .log(log)
                 .listener(listener)
+                .onPrinterAddressChanged(new com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener() {
+                    @Override
+                    public void onPrinterAddressChanged(java.util.List<String> ids, String oldAddress, String newAddress) {
+                        persistIpOverrides(app);
+                    }
+                })
                 .build();
+    }
+
+    /** Keep rediscovered printer IPs across restarts until the backend device list reflects them. */
+    private static synchronized void persistIpOverrides(Context context) {
+        PrintNatsConfig c = savedConfig(context);
+        if (c == null || instance == null) return;
+        c.ipOverrides = instance.ipOverrides();
+        prefs(context).edit().putString(KEY_CONFIG, c.toJson()).apply();
     }
 
     private static SharedPreferences prefs(Context context) {

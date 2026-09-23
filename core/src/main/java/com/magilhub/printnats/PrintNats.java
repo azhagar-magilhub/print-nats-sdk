@@ -49,7 +49,12 @@ public final class PrintNats {
     static final long FINISHED_JOB_RETENTION_MS = 3L * 24 * 60 * 60 * 1000;
 
     /** Everything a UI may want to observe. All callbacks run on SDK threads. */
-    public interface Listener extends JobListener, PrintPipeline.Listener {
+    public interface Listener extends JobListener, PrintPipeline.Listener,
+            com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener {
+        /** A printer answered on a new IP (rediscovered by MAC); the host should save it to the backend. */
+        @Override
+        default void onPrinterAddressChanged(List<String> printerIds, String oldAddress, String newAddress) {
+        }
     }
 
     private final NatsClient nats;
@@ -62,9 +67,13 @@ public final class PrintNats {
     private volatile Session session;
     private volatile boolean masterRole;
     private final LogSink logSink;
+    private final com.magilhub.printnats.discovery.IpOverrides ipOverrides;
+    private final com.magilhub.printnats.discovery.PrinterRediscovery rediscovery;
 
     private PrintNats(Builder b) {
         this.session = b.session;
+        this.ipOverrides = b.ipOverrides != null ? b.ipOverrides : new com.magilhub.printnats.discovery.IpOverrides();
+        ipOverrides.apply(b.printers);
         this.printers.addAll(b.printers);
         LogSink log = b.log;
         this.logSink = log;
@@ -122,6 +131,36 @@ public final class PrintNats {
             }
         }, new Restaurant(b.restaurant), b.session, log, listener);
         holder.pipeline = pipeline;
+
+        final com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener hostHook = b.addressHook;
+        this.rediscovery = new com.magilhub.printnats.discovery.PrinterRediscovery(
+                new com.magilhub.printnats.discovery.PrinterRediscovery.Host() {
+                    @Override
+                    public List<PrinterConfig> printers() {
+                        return new ArrayList<>(printerList);
+                    }
+
+                    @Override
+                    public boolean retry(String jobId) {
+                        return queue.retry(jobId);
+                    }
+
+                    @Override
+                    public List<PrintJob> failedJobs() {
+                        return queue.failedJobs();
+                    }
+                },
+                b.macLocator != null ? b.macLocator : new com.magilhub.printnats.discovery.MacLocator(
+                        b.arpTable != null ? b.arpTable : new com.magilhub.printnats.discovery.SystemArpTable(), log),
+                ipOverrides,
+                new com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener() {
+                    @Override
+                    public void onPrinterAddressChanged(List<String> ids, String oldAddress, String newAddress) {
+                        if (hostHook != null) hostHook.onPrinterAddressChanged(ids, oldAddress, newAddress);
+                        if (listener != null) listener.onPrinterAddressChanged(ids, oldAddress, newAddress);
+                    }
+                }, log);
+        queue.addListener(rediscovery);
         final HttpClient http = b.http;
         final LogSink receiptLog = log;
         final Boolean hostDataCap = b.dataCapDevice;
@@ -158,6 +197,7 @@ public final class PrintNats {
         if (nats != null) nats.stop();
         pipeline.shutdown();
         queue.shutdown();
+        rediscovery.shutdown();
         status.shutdown();
     }
 
@@ -169,8 +209,19 @@ public final class PrintNats {
     }
 
     public void setPrinters(List<PrinterConfig> list) {
+        ipOverrides.apply(list); // a rediscovered IP stays until the backend list reports a different one
         printers.clear();
         printers.addAll(list);
+    }
+
+    /** Printer IP rediscovery (on by default for receipts, like legacy). */
+    public com.magilhub.printnats.discovery.PrinterRediscovery rediscovery() {
+        return rediscovery;
+    }
+
+    /** Rediscovered IPs not yet confirmed by the backend device list (hosts persist this). */
+    public com.magilhub.printnats.discovery.IpOverrides ipOverrides() {
+        return ipOverrides;
     }
 
     public List<PrinterConfig> printers() {
@@ -375,6 +426,34 @@ public final class PrintNats {
         private Listener listener;
         private Boolean dataCapDevice;
         private com.magilhub.printnats.spi.OutboxStore outboxStore;
+        private com.magilhub.printnats.discovery.IpOverrides ipOverrides;
+        private com.magilhub.printnats.spi.ArpTable arpTable;
+        private com.magilhub.printnats.discovery.MacLocator macLocator;
+        private com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener addressHook;
+
+        /** Rediscovered IPs restored from the host's saved config. */
+        public Builder ipOverrides(com.magilhub.printnats.discovery.IpOverrides o) {
+            this.ipOverrides = o;
+            return this;
+        }
+
+        /** ARP cache reader for IP rediscovery (default: /proc/net/arp, ip neigh, arp -a). */
+        public Builder arpTable(com.magilhub.printnats.spi.ArpTable a) {
+            this.arpTable = a;
+            return this;
+        }
+
+        /** Replace the subnet sweep (tests). */
+        public Builder macLocator(com.magilhub.printnats.discovery.MacLocator l) {
+            this.macLocator = l;
+            return this;
+        }
+
+        /** Host hook on a rediscovered printer IP (persist overrides); runs before the UI listener. */
+        public Builder onPrinterAddressChanged(com.magilhub.printnats.discovery.PrinterRediscovery.AddressListener l) {
+            this.addressHook = l;
+            return this;
+        }
 
         /** Durable store for status events that couldn't be published (default: in memory). */
         public Builder outboxStore(com.magilhub.printnats.spi.OutboxStore s) {

@@ -3,11 +3,11 @@
 // the shell (Electron main / NW.js) passes in via window.__PRINT_NATS__ = { port, token } (or reads it from the
 // sidecar's <dataDir>/endpoint.json when the sidecar runs as a Windows service).
 import {
-  ConnectionEvent, JobEvent, PrintJob, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
+  ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
 } from './types';
 
 export * from './types';
-export { toPrinterConfigs, isMasterDevice } from './printers';
+export { toPrinterConfigs, isMasterDevice, backendAddressUpdates, addressEventToOverrides } from './printers';
 
 interface SidecarInfo {
   port: number;
@@ -110,6 +110,8 @@ export const PrintNats: PrintNatsApi = {
   onJobEvent: (cb: (e: JobEvent) => void) => listen('job', cb),
   onStatusEvent: (cb: (e: StatusEvent) => void) => listen('status', cb),
   onConnectionEvent: (cb: (e: ConnectionEvent) => void) => listen('connection', cb),
+  onPrinterAddressChanged: (cb: (e: PrinterAddressEvent) => void) => listen('printer-address', cb),
+  getIpOverrides: () => call<IpOverrides>('printers/ip-overrides'),
 };
 
 export default PrintNats;

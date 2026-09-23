@@ -24,6 +24,7 @@ JAVA_HOME=~/.jenv/versions/11 ./gradlew :parity:testDebugUnitTest -PmerchantAppD
 | Default template (blank `templateNo`) | JS fallback `"1"` | `"3"` | unit | ✅ intentional change |
 | Receipt payload (printNetworkReceipt + optimizeReceiptData) | JS (27.4) | `ReceiptPayloadBuilder` | 16 unit tests, values derived from JS | ✅ (see receipt-port-notes.md) |
 | Receipt / EOD rendering | `PrintUtil.getAsyncEscPosPrintReceipt` / `getAsyncEODPrinter` | Android: the same code copied mechanically (`android/legacy`), captured to bytes | by construction; device check pending | ✅ Android / ⏳ desktop (Java2D) |
+| Printer IP rediscovery | `showAlert` → `SubnetDevices` MAC match → `updatePrinterIP` + `updateIPAddress` event → `retryPrintWithNewIp` (receipts only) | `discovery/PrinterRediscovery` + `MacLocator` (/24 sweep, ARP cache: /proc/net/arp, `ip neigh`, `arp -a`) → `onPrinterAddressChanged` → host EditPrinter; failed receipts of that printer re-queued | unit (`DiscoveryTest`) | ✅ (see notes below) |
 
 Fixture matrix: 4 templates × {58 mm, 80 mm} × {take-out master, dine-in station w/ table/guests/batch note/KOT no/buzzer,
 customer + reprint + scheduled + unpaid + customization count, voided + event + order source, online card+cash payment,
@@ -85,6 +86,14 @@ Covered by `RulesTest`, `PrintPipelineTest`, `EndToEndIT`.
 | 16 | One physical printer with several station tags = several independent queues (concurrent sends to one device) | One lane per physical printer (connection + address) |
 | 17 | Reprint jobs without `locationId` in their data were not published | Falls back to the configured location |
 | 18 | Blank `templateNo` → "1" | → "3" (agreed) |
+
+IP rediscovery notes: same trigger (a receipt's final failure on a LAN printer stored as `ip|mac`) and same
+retry scope (receipts only; `rediscovery().setIncludeKot(true)` extends it to KOTs — off by default). Differences:
+not triggered for paper-out / cover-open / mechanical faults (the printer answered, so its IP is fine); one scan per
+printer per 60 s; only that printer's failed receipts are re-queued (legacy re-queued every failed receipt); the new
+IP is kept locally (`ipOverrides`, persisted) until the backend device list reports it, so a restart before the
+EditPrinter save doesn't fall back to the dead IP. Both legacy and SDK depend on reading the ARP cache, which
+Android 10+ can deny to apps targeting API 29+ — then the scan logs "ARP cache not readable" and nothing changes.
 
 Kept on purpose (legacy quirks): PRINT_RECEIPT fetch passes no messageId (no BE ack-on-getOrder); edit/void
 KOTs carry no messageId; edit KOT reads `theme.kotFontStyle` (not uiFeatureFlags) and prints the order time as

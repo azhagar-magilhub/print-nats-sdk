@@ -120,6 +120,17 @@ export interface ConnectionEvent {
   detail?: string;
 }
 
+/** A LAN printer answered on a new IP (found by its MAC after a failed receipt). Addresses are `[TCP:]ip|mac`. */
+export interface PrinterAddressEvent {
+  /** Every SDK printer row of that physical printer (`<deviceRowId>#<tag|receipt>`). */
+  printerIds: string[];
+  oldAddress: string;
+  newAddress: string;
+}
+
+/** Rediscovered IPs the backend device list doesn't reflect yet: mac → [oldIp, newIp]. */
+export type IpOverrides = Record<string, [string, string]>;
+
 export type Unsubscribe = () => void;
 
 /** The one API both apps use — implemented by index.native.ts (RN bridge) and index.ts (desktop sidecar). */
@@ -163,4 +174,9 @@ export interface PrintNatsApi {
   onJobEvent(cb: (e: JobEvent) => void): Unsubscribe;
   onStatusEvent(cb: (e: StatusEvent) => void): Unsubscribe;
   onConnectionEvent(cb: (e: ConnectionEvent) => void): Unsubscribe;
+
+  /** Printer IP rediscovery: save `newAddress` to the backend (legacy updateIPAddress → EditPrinter). */
+  onPrinterAddressChanged(cb: (e: PrinterAddressEvent) => void): Unsubscribe;
+  /** Rediscoveries made while no UI was listening (e.g. app killed) — sync these on start. */
+  getIpOverrides(): Promise<IpOverrides>;
 }

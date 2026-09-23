@@ -30,6 +30,10 @@ PrintNats.onJobEvent(({ event, job }) => { /* Failed Print Queue UI */ });
 4. Replace UI print calls: `PrintFramework.printKot` → `PrintNats.printKot(order, table, cancelled)`,
    edit/void → `printEditKot`, receipts → `printReceipt(order, cpSurchargeByOrder[key] ?? 0)`,
    `printEOD` → `printEod`, failed queue → `getFailedJobs/retry/cancel/...`.
+   Printer IP rediscovery: save new addresses to the backend (legacy `updateIPAddress` listener):
+   `PrintNats.onPrinterAddressChanged(e => backendAddressUpdates(devices, addressEventToOverrides(e)).forEach(u =>
+   dispatch(EditPrinter({ ...u, shouldUpdateDeviceIdentifier: true }))))`, and on start
+   `PrintNats.getIpOverrides().then(o => backendAddressUpdates(devices, o)…)` for rediscoveries made with the app killed.
 5. Remove the JS auto-print path (FCMService NATS listener → handleFCMEvent printing) and NatsConnectionService
    — the SDK prints natively. Keep FCM only as a wake-up if needed.
 6. Roll out behind a per-location flag; both paths must never run at once (double tickets).

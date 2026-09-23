@@ -130,6 +130,15 @@ public final class DesktopHost {
                 .log(log)
                 .listener(listener)
                 .dataCapDevice(false)
+                .onPrinterAddressChanged((ids, oldAddress, newAddress) -> persistQuietly()) // c.ipOverrides is live
                 .build();
+    }
+
+    private synchronized void persistQuietly() {
+        try {
+            if (config != null) save();
+        } catch (IOException e) {
+            log.append("print_", "IP-RESCAN:: could not save config: " + e);
+        }
     }
 }

@@ -1,4 +1,4 @@
-import { PrinterConfig, Purpose, Connection } from './types';
+import { PrinterConfig, Purpose, Connection, IpOverrides, PrinterAddressEvent } from './types';
 
 /** Subset of MerchantApp's MerchantDevice (src/features/printer/printerModels.ts). */
 export interface MerchantDevice {
@@ -85,4 +85,45 @@ function row(p: MerchantDevice, kotSpace: number, tagId: string | undefined, sta
 export function isMasterDevice(devices: MerchantDevice[] | null | undefined, deviceId: string): boolean {
   const tab = devices?.find((d) => d.deviceType === 'TAB' && d.deviceIdentifier === deviceId);
   return tab?.isDefault === 1;
+}
+
+const normMac = (mac: string | undefined): string | null => {
+  if (!mac) return null;
+  const parts = mac.trim().toLowerCase().replace(/-/g, ':').split(':');
+  if (parts.length !== 6 || parts.some((p) => !/^[0-9a-f]{1,2}$/.test(p))) return null;
+  return parts.map((p) => p.padStart(2, '0')).join(':');
+};
+
+/** Split a stored identifier `[TCP:]ip|mac`. */
+function splitAddress(address: string): { ip: string; mac: string | null; rawMac: string | null } {
+  const a = address.replace(/^TCP:/, '');
+  const bar = a.indexOf('|');
+  const rawMac = bar < 0 ? null : a.slice(bar + 1);
+  return { ip: (bar < 0 ? a : a.slice(0, bar)).trim(), mac: normMac(rawMac ?? undefined), rawMac };
+}
+
+/** A printer-address event as an overrides map, so both paths share backendAddressUpdates. */
+export function addressEventToOverrides(e: PrinterAddressEvent): IpOverrides {
+  const before = splitAddress(e.oldAddress);
+  const after = splitAddress(e.newAddress);
+  return before.mac ? { [before.mac]: [before.ip, after.ip] } : {};
+}
+
+/**
+ * Backend updates for rediscovered printer IPs — what legacy's `updateIPAddress` listener sent to EditPrinter:
+ * `{ id, deviceIdentifier: "<newIp>|<mac>" }` (no "TCP:" prefix). Only devices still on the OLD IP are returned,
+ * so re-running it after the backend caught up is a no-op.
+ */
+export function backendAddressUpdates(
+  devices: MerchantDevice[] | null | undefined,
+  overrides: IpOverrides,
+): { id: string; deviceIdentifier: string }[] {
+  const out: { id: string; deviceIdentifier: string }[] = [];
+  for (const d of devices ?? []) {
+    if (d.deviceType !== 'PRINTER' || !d.deviceIdentifier) continue;
+    const { ip, mac, rawMac } = splitAddress(d.deviceIdentifier);
+    const o = mac ? overrides[mac] : undefined;
+    if (o && o[0] === ip && o[1] !== ip) out.push({ id: d.id, deviceIdentifier: `${o[1]}|${rawMac}` });
+  }
+  return out;
 }

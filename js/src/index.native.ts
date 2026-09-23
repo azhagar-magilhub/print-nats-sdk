@@ -1,11 +1,11 @@
 // React Native (Android): bridge to com.magilhub.printnats.rn.PrintNatsModule.
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import {
-  ConnectionEvent, JobEvent, PrintJob, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
+  ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
 } from './types';
 
 export * from './types';
-export { toPrinterConfigs, isMasterDevice } from './printers';
+export { toPrinterConfigs, isMasterDevice, backendAddressUpdates, addressEventToOverrides } from './printers';
 
 const Native = NativeModules.PrintNats;
 const emitter = Native ? new NativeEventEmitter(Native) : null;
@@ -78,6 +78,15 @@ export const PrintNats: PrintNatsApi = {
     listen('PrintNatsStatusEvent', (raw) => ({ subject: raw.subject, data: safeParse(raw.data), history: !!raw.history }), cb),
   onConnectionEvent: (cb: (e: ConnectionEvent) => void) =>
     listen('PrintNatsConnectionEvent', (raw) => ({ type: raw.type, detail: raw.detail }), cb),
+  onPrinterAddressChanged: (cb: (e: PrinterAddressEvent) => void) =>
+    listen(
+      'PrintNatsPrinterAddressEvent',
+      (raw) => ({ printerIds: JSON.parse(raw.printerIds), oldAddress: raw.oldAddress, newAddress: raw.newAddress }),
+      cb,
+    ),
+  async getIpOverrides(): Promise<IpOverrides> {
+    return JSON.parse(await requireNative().getIpOverrides());
+  },
 };
 
 function safeParse(s: string): Record<string, unknown> {

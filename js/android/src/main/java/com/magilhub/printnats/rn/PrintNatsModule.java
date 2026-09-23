@@ -33,6 +33,7 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     static final String EVENT_JOB = "PrintNatsJobEvent";
     static final String EVENT_STATUS = "PrintNatsStatusEvent";
     static final String EVENT_CONNECTION = "PrintNatsConnectionEvent";
+    static final String EVENT_PRINTER_ADDRESS = "PrintNatsPrinterAddressEvent";
     private static final Gson GSON = new Gson();
 
     private final ReactApplicationContext context;
@@ -64,6 +65,15 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
                 m.putString("type", type);
                 m.putString("detail", detail);
                 emit(EVENT_CONNECTION, m);
+            }
+
+            @Override
+            public void onPrinterAddressChanged(java.util.List<String> printerIds, String oldAddress, String newAddress) {
+                WritableMap m = Arguments.createMap();
+                m.putString("printerIds", GSON.toJson(printerIds));
+                m.putString("oldAddress", oldAddress);
+                m.putString("newAddress", newAddress);
+                emit(EVENT_PRINTER_ADDRESS, m);
             }
         });
     }
@@ -245,6 +255,17 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     }
 
     // ---- Failed Print Queue -------------------------------------------------------------------------
+
+    /** Rediscovered printer IPs the backend doesn't have yet: {"mac": [oldIp, newIp]}. */
+    @ReactMethod
+    public void getIpOverrides(Promise promise) {
+        try {
+            PrintNats s = PrintNatsAndroid.get(context);
+            promise.resolve(s == null ? "{}" : GSON.toJson(s.ipOverrides().byMac));
+        } catch (Throwable t) {
+            promise.reject("E_OVERRIDES", t);
+        }
+    }
 
     @ReactMethod
     public void getFailedJobs(Promise promise) {
