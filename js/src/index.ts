@@ -92,6 +92,7 @@ export const PrintNats: PrintNatsApi = {
   printEditKot: (order) => call<number>('print/edit-kot', { order }),
   printReceipt: (order, cardSurcharge = 0) => call<number>('print/receipt', { order, cardSurcharge }),
   printEod: (eod) => call<number>('print/eod', { eod }),
+  printReceiptJson: (receiptJson, textReceipt = false) => call<number>('print/receipt-json', { receiptJson, textReceipt }),
 
   openCashDrawer: () => call<{ ok: boolean; message?: string | null }>('drawer/open'),
   printerStatus: (printerId) => call('printers/status', { printerId }),

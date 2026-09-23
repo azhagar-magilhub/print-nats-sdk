@@ -143,6 +143,8 @@ export interface PrintNatsApi {
   printReceipt(order: Record<string, unknown>, cardSurcharge?: number): Promise<number>;
   /** End-of-day report JSON (legacy PrintFramework.printEOD). */
   printEod(eodReport: Record<string, unknown>): Promise<number>;
+  /** A receipt payload the app already built (legacy PrintFramework.printReceiptJson). */
+  printReceiptJson(receiptJson: string, textReceipt?: boolean): Promise<number>;
 
   /** Open the cash drawer on the receipt printer now (legacy PrintFramework.openCashDrawer). */
   openCashDrawer(): Promise<{ ok: boolean; message?: string | null }>;
