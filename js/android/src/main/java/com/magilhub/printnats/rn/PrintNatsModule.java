@@ -265,6 +265,20 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
 
     // ---- Failed Print Queue -------------------------------------------------------------------------
 
+    /** Keep this activity's screen on (customer display) — FLAG_KEEP_SCREEN_ON on the UI thread. */
+    @ReactMethod
+    public void setKeepScreenOn(final boolean on) {
+        final android.app.Activity activity = getCurrentActivity();
+        if (activity == null) return;
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (on) activity.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else activity.getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }
+        });
+    }
+
     /** App messaging (core NATS, e.g. CartVue): fire-and-forget publish; resolves true when sent now. */
     @ReactMethod
     public void publish(String subject, String data, Promise promise) {

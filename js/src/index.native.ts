@@ -86,6 +86,9 @@ export const PrintNats: PrintNatsApi = {
     ),
   testPrint: (printer) => requireNative().testPrint(JSON.stringify(printer)),
   publish: (subject, data) => requireNative().publish(subject, data),
+  setKeepScreenOn: (on: boolean) => {
+    Native?.setKeepScreenOn?.(on);
+  },
   async subscribe(subject) {
     await requireNative().subscribe(subject);
   },

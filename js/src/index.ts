@@ -113,6 +113,7 @@ export const PrintNats: PrintNatsApi = {
   onPrinterAddressChanged: (cb: (e: PrinterAddressEvent) => void) => listen('printer-address', cb),
   getIpOverrides: () => call<IpOverrides>('printers/ip-overrides'),
   publish: (subject: string, data: string) => call<boolean>('app/publish', { subject, data }),
+  setKeepScreenOn: () => undefined,
   async subscribe(subject: string) {
     await call<boolean>('app/subscribe', { subject });
   },

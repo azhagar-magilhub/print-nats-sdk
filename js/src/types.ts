@@ -199,6 +199,8 @@ export interface PrintNatsApi {
    * as the CartVue customer display (`cartvue.<locationId>.<deviceId>`).
    */
   publish(subject: string, data: string): Promise<boolean>;
+  /** Android: keep the screen on while true (customer display). No-op on desktop. */
+  setKeepScreenOn(on: boolean): void;
   subscribe(subject: string): Promise<void>;
   unsubscribe(subject: string): Promise<void>;
   onAppMessage(cb: (m: AppMessage) => void): Unsubscribe;
