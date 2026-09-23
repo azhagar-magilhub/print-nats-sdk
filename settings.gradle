@@ -2,3 +2,10 @@ rootProject.name = 'print-nats-sdk'
 include ':core'
 include ':android'
 include ':parity'
+
+// Compile-check the RN bridge (js/android) against a host's node_modules React Native:
+//   ./gradlew :rn-bridge:assembleDebug -PrnHost=../MerchantApp
+if (hasProperty('rnHost')) {
+    include ':rn-bridge'
+    project(':rn-bridge').projectDir = file('js/android')
+}

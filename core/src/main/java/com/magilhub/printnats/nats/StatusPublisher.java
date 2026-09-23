@@ -148,11 +148,10 @@ public final class StatusPublisher implements JobListener {
         Boolean isMaster = null;
         String cuisineId = null;
         String station = null;
-        boolean isStation = false;
+        boolean isStation = job.isStation;
         if (printer != null) {
             cuisineId = printer.cuisineId;
             isMaster = printer.purpose == PrinterConfig.Purpose.MASTER_KOT;
-            isStation = printer.isStation();
             station = printer.resolvedStationName();
             if (printer.address != null && !printer.address.isEmpty()) {
                 extra.addProperty("printerIp", printer.address.split("\\|")[0]);

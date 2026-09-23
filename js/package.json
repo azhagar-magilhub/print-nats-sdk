@@ -1,0 +1,24 @@
+{
+  "name": "@merchant/print-nats",
+  "version": "0.1.0",
+  "description": "Shared print + NATS SDK: React Native bridge (Android) and desktop sidecar client, one API.",
+  "main": "src/index.ts",
+  "react-native": "src/index.native.ts",
+  "browser": "src/index.ts",
+  "types": "src/index.ts",
+  "files": ["src", "android", "react-native.config.js"],
+  "license": "UNLICENSED",
+  "private": true,
+  "peerDependencies": {
+    "react-native": ">=0.63"
+  },
+  "peerDependenciesMeta": {
+    "react-native": { "optional": true }
+  },
+  "devDependencies": {
+    "typescript": "^4.9.5"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ."
+  }
+}

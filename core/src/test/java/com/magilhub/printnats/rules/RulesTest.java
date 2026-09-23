@@ -289,5 +289,21 @@ public class RulesTest {
         assertEquals(2, Json.arr(t.get(1).payload, "items").size());
         assertEquals("BAR-A", t.get(2).printer.id);
         assertEquals("BAR-B", t.get(3).printer.id);
+        assertFalse(t.get(0).isStation);
+        assertTrue(t.get(1).isStation);
+    }
+
+    @Test
+    public void defaultOrderPrinterPrintsMasterAndItsStationTickets() {
+        // usePrinterSync registers the default ORDER printer once per tag, all rows purpose MASTER_KOT.
+        JsonObject payload = new KotPayloadBuilder(restaurant(null), dates).kot(order("OT-P"), null, false);
+        List<PrinterConfig> printers = Arrays.asList(
+                printer("MAIN#C-TANDOOR", PrinterConfig.Purpose.MASTER_KOT, "C-TANDOOR"),
+                printer("MAIN#C-BAR", PrinterConfig.Purpose.MASTER_KOT, "C-BAR"));
+        List<KotRouter.Ticket> t = KotRouter.route(payload, printers);
+        assertEquals("master + tandoor + bar, all on the MAIN printer rows", 3, t.size());
+        assertFalse("master ticket", t.get(0).isStation);
+        assertTrue("station ticket on a MASTER_KOT row is still a station ticket", t.get(1).isStation);
+        assertTrue(t.get(2).isStation);
     }
 }

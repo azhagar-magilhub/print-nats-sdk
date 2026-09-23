@@ -24,3 +24,29 @@ dependencies {
     implementation 'com.starmicronics:starioextension:1.15.1'
     testImplementation "junit:junit:$junitVersion"
 }
+
+// AGP 3.5 has no `components.release`, so publish the AAR explicitly with its runtime dependencies.
+afterEvaluate {
+    publishing {
+        publications {
+            aar(MavenPublication) {
+                groupId = 'com.magilhub'
+                artifactId = 'print-nats-android'
+                version = project.version
+                artifact(tasks.getByName('bundleReleaseAar'))
+                pom.withXml {
+                    def deps = asNode().appendNode('dependencies')
+                    [['com.magilhub', 'print-nats-core', project.version],
+                     ['com.starmicronics', 'stario', '2.10.1'],
+                     ['com.starmicronics', 'starioextension', '1.15.1']].each { d ->
+                        def n = deps.appendNode('dependency')
+                        n.appendNode('groupId', d[0])
+                        n.appendNode('artifactId', d[1])
+                        n.appendNode('version', d[2])
+                        n.appendNode('scope', 'compile')
+                    }
+                }
+            }
+        }
+    }
+}

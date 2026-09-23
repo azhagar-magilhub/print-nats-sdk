@@ -33,11 +33,11 @@ public final class DefaultTicketRenderer implements TicketRenderer {
         Receipt receipt = GSON.fromJson(job.payloadJson, Receipt.class);
         String station = printer.resolvedStationName();
         if (!printer.isStar) {
-            return ThermalKotRenderer.render(receipt, station, printer.isStation(), printer.is58mm, printer.kotSpace, nowMillis);
+            return ThermalKotRenderer.render(receipt, station, job.isStation, printer.is58mm, printer.kotSpace, nowMillis);
         }
         if (starEncoder == null) throw new IllegalStateException("no StarEncoder configured for Star printer " + printer.id);
         StarSink sink = starEncoder.newSink(printer);
-        String skip = StarKotRenderer.render(sink, receipt, station, printer.isStation(), printer.is58mm, printer.utf8,
+        String skip = StarKotRenderer.render(sink, receipt, station, job.isStation, printer.is58mm, printer.utf8,
                 printer.kotSpace, log, nowMillis);
         if (skip != null) return RenderResult.skipped(skip);
         return RenderResult.bytes(starEncoder.toBytes(sink), "star-T" + ThermalKotRenderer.resolveTemplate(receipt.getTemplateNo()), 0);

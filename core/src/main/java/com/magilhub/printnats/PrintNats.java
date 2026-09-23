@@ -220,7 +220,7 @@ public final class PrintNats {
         private final List<PrinterConfig> printers = new ArrayList<>();
         private JobStore jobStore = new InMemoryJobStore();
         private InboundStore inboundStore = new InMemoryInboundStore();
-        private PrinterTransport transport = new RoutingTransport();
+        private PrinterTransport transport;
         private StarEncoder starEncoder;
         private ReceiptRenderer receiptRenderer;
         private HttpClient http = new UrlConnectionHttpClient(60_000);
@@ -296,6 +296,7 @@ public final class PrintNats {
         }
 
         public PrintNats build() {
+            if (transport == null) transport = new RoutingTransport(log);
             if (natsConfig != null) {
                 if (natsConfig.locationId == null) natsConfig.locationId = session.locationId;
                 if (natsConfig.deviceId == null) natsConfig.deviceId = session.deviceId;

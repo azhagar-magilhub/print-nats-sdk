@@ -265,6 +265,7 @@ public final class PrintPipeline implements NatsEvents {
         int n = 0;
         for (KotRouter.Ticket t : tickets) {
             PrintJob job = job(base + "|" + t.printer.id, kind, t.printer.id, t.payload);
+            job.isStation = t.isStation;
             n += enqueueOnce(job);
         }
         log.append("print_", "Info:: Print Initiated Or.No: " + Json.str(payload, "orderNo") + " tickets=" + n);

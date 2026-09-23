@@ -1,0 +1,48 @@
+// React Native bridge for print-nats-sdk. Autolinked into the host app, where React Native is available.
+// Works with the old bridge (RN 0.63) and New Architecture interop (RN 0.76).
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:3.5.4'
+    }
+}
+
+apply plugin: 'com.android.library'
+
+def safeExtGet(prop, fallback) {
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+}
+
+android {
+    compileSdkVersion safeExtGet('compileSdkVersion', 31)
+    defaultConfig {
+        minSdkVersion safeExtGet('minSdkVersion', 24)
+        targetSdkVersion safeExtGet('targetSdkVersion', 31)
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+repositories {
+    mavenLocal()   // ./gradlew :android:publishToMavenLocal in print-nats-sdk during development
+    google()
+    mavenCentral()
+    if (rootProject.hasProperty('rnHost')) {
+        // compile-check inside print-nats-sdk: React Native from the host's node_modules
+        maven { url "${rootProject.file(rootProject.property('rnHost'))}/node_modules/react-native/android" }
+    }
+}
+
+dependencies {
+    implementation 'com.facebook.react:react-native:+'
+    if (rootProject.name == 'print-nats-sdk') {
+        implementation project(':android')
+    } else {
+        implementation "com.magilhub:print-nats-android:${safeExtGet('printNatsVersion', '0.1.0-SNAPSHOT')}"
+    }
+}

@@ -74,7 +74,9 @@ public class EndToEndIT {
                     byte[] buf = new byte[4096];
                     int n;
                     while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-                    jobs.add(out.toByteArray());
+                    byte[] b = out.toByteArray();
+                    // LanThermalTransport opens short DLE EOT status-query connections too; keep only print jobs
+                    if (b.length > 0 && !(b[0] == 0x10 && b.length > 1 && b[1] == 0x04)) jobs.add(b);
                 } catch (Exception e) {
                     return;
                 }

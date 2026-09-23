@@ -22,10 +22,12 @@ public final class KotRouter {
     public static final class Ticket {
         public final PrinterConfig printer;
         public final JsonObject payload;
+        public final boolean isStation;
 
-        Ticket(PrinterConfig printer, JsonObject payload) {
+        Ticket(PrinterConfig printer, JsonObject payload, boolean isStation) {
             this.printer = printer;
             this.payload = payload;
+            this.isStation = isStation;
         }
     }
 
@@ -46,7 +48,7 @@ public final class KotRouter {
             for (JsonElement it : items) {
                 if (it.isJsonObject() && Json.isTrueBoolean(it.getAsJsonObject(), "masterKOT")) masterItems.add(it.deepCopy());
             }
-            if (masterItems.size() > 0) out.add(new Ticket(master, withItems(payload, masterItems)));
+            if (masterItems.size() > 0) out.add(new Ticket(master, withItems(payload, masterItems), false));
         }
 
         Map<String, JsonArray> byCuisine = new LinkedHashMap<>();
@@ -60,7 +62,7 @@ public final class KotRouter {
         }
         for (Map.Entry<String, JsonArray> e : byCuisine.entrySet()) {
             for (PrinterConfig p : printers) {
-                if (e.getKey().equals(p.cuisineId)) out.add(new Ticket(p, withItems(payload, e.getValue())));
+                if (e.getKey().equals(p.cuisineId)) out.add(new Ticket(p, withItems(payload, e.getValue()), true));
             }
         }
         return out;

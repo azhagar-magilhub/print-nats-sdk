@@ -6,6 +6,12 @@ public final class PrintJob {
     public JobKind kind = JobKind.KOT;
     public String printerId;
     public String payloadJson;
+    /**
+     * Station ticket vs master (Expo) ticket — decided by the router when the job is created (legacy savePrint's
+     * isStation), NOT by the printer's purpose: the default ORDER printer is registered per station tag with
+     * purpose MASTER_KOT and prints both kinds.
+     */
+    public boolean isStation;
     public JobStatus status = JobStatus.PENDING;
     public int retries;
     public String reason;
@@ -27,6 +33,7 @@ public final class PrintJob {
         j.kind = kind;
         j.printerId = printerId;
         j.payloadJson = payloadJson;
+        j.isStation = isStation;
         j.status = status;
         j.retries = retries;
         j.reason = reason;
