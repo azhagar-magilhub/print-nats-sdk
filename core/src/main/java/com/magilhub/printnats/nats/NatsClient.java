@@ -143,7 +143,7 @@ public final class NatsClient {
             try {
                 d.subscribe(subject);
             } catch (RuntimeException e) {
-                log.append("nats_", "app subscribe failed " + subject + ": " + e);
+                log.append("nats_", redact("app subscribe failed " + subject + ": " + e));
             }
         }
     }
@@ -185,7 +185,7 @@ public final class NatsClient {
             try {
                 events.onAppMessage(msg.getSubject(), msg.getData());
             } catch (RuntimeException e) {
-                log.append("nats_", "app message handler threw: " + e);
+                log.append("nats_", redact("app message handler threw: " + e));
             }
         });
         for (String s : appSubjects) d.subscribe(s);
@@ -269,7 +269,7 @@ public final class NatsClient {
                 if (want && !relaySubscribed) {
                     d.subscribe(servedSubject, RELAY_QUEUE_GROUP);
                     relaySubscribed = true;
-                    events.onConnectionEvent("relay_serving", servedSubject);
+                    emitConnectionEvent("relay_serving", servedSubject);
                     // tell waiting clients to retry now instead of after their backoff
                     Connection c = connection;
                     if (c != null) {
@@ -278,10 +278,10 @@ public final class NatsClient {
                 } else if (!want && relaySubscribed) {
                     d.unsubscribe(servedSubject);
                     relaySubscribed = false;
-                    events.onConnectionEvent("relay_stopped", servedSubject);
+                    emitConnectionEvent("relay_stopped", servedSubject);
                 }
             } catch (RuntimeException e) {
-                log.append("nats_", "relay subscription change failed: " + e);
+                log.append("nats_", redact("relay subscription change failed: " + e));
             }
         }
     }
@@ -300,19 +300,19 @@ public final class NatsClient {
             try {
                 reply = h.handle(msg.getData());
             } catch (Throwable t) {
-                log.append("nats_", "relay handler threw: " + t);
+                log.append("nats_", redact("relay handler threw: " + t));
                 reply = ("{\"ok\":false,\"error\":\"Master error\"}").getBytes(StandardCharsets.UTF_8);
             }
             if (reply == null) return;
             try {
                 nc.publish(replyTo, reply);
             } catch (Throwable t) {
-                log.append("nats_", "relay reply failed: " + t);
+                log.append("nats_", redact("relay reply failed: " + t));
             }
         });
         String served = servedSubject;
         if (served != null) {
-            d.subscribe(onlineSubject(served), m -> events.onConnectionEvent("relay_master_online",
+            d.subscribe(onlineSubject(served), m -> emitConnectionEvent("relay_master_online",
                     new String(m.getData(), StandardCharsets.UTF_8)));
         }
         synchronized (relayLock) {
@@ -417,7 +417,7 @@ public final class NatsClient {
     /** Switch status-subscription scope while connected (dashboard "switch master device"). */
     public void updateMasterRole(boolean master) {
         if (this.isMaster == master) return;
-        events.onConnectionEvent("role_changed", master ? "master" : "client");
+        emitConnectionEvent("role_changed", master ? "master" : "client");
         this.isMaster = master;
         config.isMaster = master;
         applyRelaySubscription();
@@ -440,7 +440,7 @@ public final class NatsClient {
                         .maxReconnects(-1)
                         .reconnectWait(Duration.ofMillis(config.reconnectWaitMs))
                         .connectionListener((conn, type) -> {
-                            events.onConnectionEvent("connection_event", String.valueOf(type));
+                            emitConnectionEvent("connection_event", String.valueOf(type));
                             // jnats reconnects transparently (same Connection), so the fresh-connect flush below
                             // never re-runs; flush here too. (Legacy only flushed on a fresh connect, so status
                             // events buffered during a blip stayed unsent until the app restarted.)
@@ -452,21 +452,21 @@ public final class NatsClient {
                         .errorListener(new ErrorListener() {
                             @Override
                             public void errorOccurred(Connection conn, String error) {
-                                events.onConnectionEvent("error", error);
+                                emitConnectionEvent("error", error);
                             }
 
                             @Override
                             public void exceptionOccurred(Connection conn, Exception exp) {
-                                events.onConnectionEvent("exception", String.valueOf(exp));
+                                emitConnectionEvent("exception", String.valueOf(exp));
                             }
                         });
                 if (config.authToken != null && !config.authToken.isEmpty()) {
                     builder.token(config.authToken.toCharArray());
                 }
-                events.onConnectionEvent("connecting", "testMode=" + config.testMode);
+                emitConnectionEvent("connecting", "testMode=" + config.testMode);
                 Connection nc = Nats.connect(builder.build());
                 connection = nc;
-                events.onConnectionEvent("connected", String.valueOf(nc.getStatus()));
+                emitConnectionEvent("connected", String.valueOf(nc.getStatus()));
                 // App messaging first: a print-stream problem below (e.g. consumer bind) must not hold up CartVue.
                 startAppMessaging(nc);
                 startRelayServing(nc);
@@ -480,7 +480,7 @@ public final class NatsClient {
                 if (config.testMode) provisionForTest(nc);
 
                 JetStreamSubscription sub = bindPrintConsumer(nc, js);
-                events.onConnectionEvent("subscribed", "stream=" + config.streamName + " consumer=" + config.consumer());
+                emitConnectionEvent("subscribed", "stream=" + config.streamName + " consumer=" + config.consumer());
                 backoff = config.initialBackoffMs;
                 startStatusSubscriptions(js);
 
@@ -493,11 +493,11 @@ public final class NatsClient {
                 Thread.currentThread().interrupt();
                 break;
             } catch (Throwable t) {
-                events.onConnectionEvent("connect_failed", String.valueOf(t));
+                emitConnectionEvent("connect_failed", String.valueOf(t));
                 stopStatusSubscriptions();
                 closeConnection();
                 if (!running.get()) break;
-                events.onConnectionEvent("retrying", backoff + "ms");
+                emitConnectionEvent("retrying", backoff + "ms");
                 try {
                     Thread.sleep(backoff);
                 } catch (InterruptedException ie) {
@@ -548,7 +548,7 @@ public final class NatsClient {
             });
         } catch (Throwable t) {
             // A handler crash must not become a redelivery loop on a poison message.
-            events.onConnectionEvent("handler_error", String.valueOf(t));
+            emitConnectionEvent("handler_error", String.valueOf(t));
             try {
                 msg.ack();
             } catch (Throwable ignored) {
@@ -564,7 +564,7 @@ public final class NatsClient {
             nc.publish(config.backendAckSubject(),
                     ("{\"messageId\":\"" + messageId.replace("\"", "\\\"") + "\"}").getBytes(StandardCharsets.UTF_8));
         } catch (Throwable t) {
-            events.onConnectionEvent("backend_ack_failed", String.valueOf(t));
+            emitConnectionEvent("backend_ack_failed", String.valueOf(t));
         }
     }
 
@@ -575,7 +575,7 @@ public final class NatsClient {
         } catch (IllegalArgumentException | JetStreamApiException bindFailed) {
             // jnats throws IllegalArgumentException client-side for "consumer not found, required in bind mode".
             if (config.testMode) throw bindFailed;
-            events.onConnectionEvent("consumer_missing", "self-provisioning consumer only on " + config.streamName);
+            emitConnectionEvent("consumer_missing", "self-provisioning consumer only on " + config.streamName);
             nc.jetStreamManagement().addOrUpdateConsumer(config.streamName, consumerConfig());
             return js.subscribe(null, so);
         }
@@ -601,7 +601,7 @@ public final class NatsClient {
             }
             jsm.addOrUpdateConsumer(config.streamName, consumerConfig());
         } catch (Throwable t) {
-            events.onConnectionEvent("test_provision_failed", String.valueOf(t));
+            emitConnectionEvent("test_provision_failed", String.valueOf(t));
         }
     }
 
@@ -620,7 +620,7 @@ public final class NatsClient {
                         .build());
             }
         } catch (Throwable t) {
-            events.onConnectionEvent("status_stream_failed", String.valueOf(t));
+            emitConnectionEvent("status_stream_failed", String.valueOf(t));
         }
     }
 
@@ -651,7 +651,7 @@ public final class NatsClient {
                     }
                 });
             } catch (Throwable t) {
-                events.onConnectionEvent("status_subscribe_failed", String.valueOf(t));
+                emitConnectionEvent("status_subscribe_failed", String.valueOf(t));
             }
         }
     }
@@ -721,5 +721,18 @@ public final class NatsClient {
         t.setDaemon(true);
         t.start();
         return t;
+    }
+
+    /** Connection events carry exception text, which for connect failures includes the server URL with credentials. */
+    private void emitConnectionEvent(String type, String detail) {
+        events.onConnectionEvent(type, redact(detail));
+    }
+
+    private static final java.util.regex.Pattern URL_CREDENTIALS =
+            java.util.regex.Pattern.compile("(://)[^/@\\s:]+:[^@\\s/]+@");
+
+    /** nats://user:pass@host → nats://***:***@host, so logs and events never carry NATS credentials. */
+    static String redact(String s) {
+        return s == null ? null : URL_CREDENTIALS.matcher(s).replaceAll("$1***:***@");
     }
 }
