@@ -9,7 +9,7 @@ Failed Print Queue survives restarts.
 ## Install (React Native app)
 
 ```json
-"@merchant/print-nats": "git+https://github.com/azhagar-magilhub/print-nats-sdk.git#v0.2.0"
+"@merchant/print-nats": "git+https://github.com/azhagar-magilhub/print-nats-sdk.git#v0.2.1"
 ```
 
 `yarn install` fetches the tag; the RN bridge (`js/android`) compiles `core` + `android` from that checkout
@@ -43,10 +43,10 @@ maghilOrder reference: `src/printing/PrintNatsBridge.tsx`.
 
 | Call | Use |
 |---|---|
-| `printKot(order, tableName?, cancelled?)` | new / void / cancel KOT (on a client it is relayed to the master). Returns tickets queued |
+| `printKot(order, tableName?, cancelled?)` | new / void / cancel KOT (on a client it is relayed to the master; with no NATS connection — no internet — it prints on this device's LAN printers). Returns tickets queued |
 | `printEditKot(order)` | edit KOT |
 | `printReceipt(order, cardSurcharge?)` | receipt on this device's receipt printer |
-| `relayReceipt(order, surcharge?, timeoutMs?)` | receipt printed by the master; tickets, or `-1` when no master answered |
+| `relayReceipt(order, surcharge?, timeoutMs?)` | receipt printed by the master; with no NATS connection (or no master answer) it goes straight to the master's receipt printer over LAN; tickets, or `-1` |
 | `hasReceiptPrinter()` / `isMaster()` | routing checks |
 | `printReceiptJson(json, text?)`, `printEod(report)` | pre-built receipt / slip, end-of-day report |
 | `testPrint(printerConfig)` | test print from device settings |

@@ -78,6 +78,10 @@ public class PrintRelayIT {
     }
 
     private Device device(String deviceId, boolean master, boolean relayToMaster, String apiBaseUrl) {
+        return device(deviceId, master, relayToMaster, apiBaseUrl, server.url());
+    }
+
+    private Device device(String deviceId, boolean master, boolean relayToMaster, String apiBaseUrl, String natsUrl) {
         final Device d = new Device();
         Session s = new Session();
         s.locationId = "L1";
@@ -85,7 +89,7 @@ public class PrintRelayIT {
         s.apiBaseUrl = apiBaseUrl;
         s.accessToken = "tok";
         NatsConfig nc = new NatsConfig();
-        nc.serverUrls = server.url();
+        nc.serverUrls = natsUrl;
         nc.testMode = true;
         nc.initialBackoffMs = 200;
         nc.isMaster = master;
@@ -340,5 +344,39 @@ public class PrintRelayIT {
         assertEquals("MerchantApp behaviour: client prints itself", 1, d.sdk.printKot(freshOrder(), null, false));
         d.sdk.start();
         await("printed locally", 10_000, () -> d.sentCount() == 1);
+    }
+
+    /** No internet (NATS unreachable): a client's KOT is not held for the master — it prints on this device's printers. */
+    @Test
+    public void offlineClientPrintsKotItself() throws Exception {
+        Device client = device("C1", false, true, null, "nats://127.0.0.1:1");
+        client.sdk.start();
+        assertFalse(client.sdk.isNatsConnected());
+        assertEquals(1, client.sdk.printKot(freshOrder(), "T4", false));
+        final String jobId = onlyRelayJobId(client);
+        await("relay job done offline", 10_000, () -> client.job(jobId).status == JobStatus.SUCCESS);
+        await("printed on this device", 10_000, () -> client.sentCount() >= 1);
+        assertEquals("EXPO-C1", client.sent.get(0));
+        assertTrue(client.logged("No NATS connection"));
+    }
+
+    /** No internet: a client without its own receipt printer prints straight to the master's receipt printer. */
+    @Test
+    public void offlineClientReceiptGoesToMastersReceiptPrinter() throws Exception {
+        final Device client = device("C1", false, true, null, "nats://127.0.0.1:1");
+        PrinterConfig masterReceipt = new PrinterConfig();
+        masterReceipt.id = "R1#masterreceipt";
+        masterReceipt.purpose = PrinterConfig.Purpose.MASTER_RECEIPT;
+        masterReceipt.address = "10.255.255.3";
+        List<PrinterConfig> list = new ArrayList<>(client.sdk.printers());
+        list.add(masterReceipt);
+        client.sdk.setPrinters(list);
+        client.sdk.start();
+        assertFalse("its own receipt printer: none", client.sdk.hasReceiptPrinter());
+        assertEquals(1, client.sdk.relayReceipt(freshOrder(), 0, 2000));
+        // queued on the master's receipt printer (this harness has no receipt renderer, so it isn't sent)
+        boolean queued = false;
+        for (PrintJob j : client.jobs.findByStatus(JobStatus.values())) queued |= "R1#masterreceipt".equals(j.printerId);
+        assertTrue("receipt job on the master's receipt printer", queued);
     }
 }

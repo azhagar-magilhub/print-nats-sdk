@@ -43,6 +43,10 @@ public final class DeviceList {
                 out.add(receipt);
             }
         }
+        if (out.isEmpty() && !isMaster(devices, deviceId)) {
+            PrinterConfig masterReceipt = masterReceiptRow(devices, space);
+            if (masterReceipt != null) out.add(masterReceipt);
+        }
         for (JsonElement e : devices) {
             if (!e.isJsonObject()) continue;
             JsonObject d = e.getAsJsonObject();
@@ -80,6 +84,31 @@ public final class DeviceList {
         p.stationName = stationName;
         p.kotSpace = kotSpace;
         return p;
+    }
+
+    /** The master TAB's receipt printer as a {@link PrinterConfig.Purpose#MASTER_RECEIPT} row, or null. */
+    private static PrinterConfig masterReceiptRow(JsonArray devices, int space) {
+        String masterReceiptId = null;
+        for (JsonElement e : devices) {
+            if (!e.isJsonObject()) continue;
+            JsonObject d = e.getAsJsonObject();
+            if ("TAB".equals(Json.str(d, "deviceType")) && isOne(d.get("isDefault"))) {
+                masterReceiptId = Json.str(d, "receiptPrinterId");
+                break;
+            }
+        }
+        if (masterReceiptId == null) return null;
+        for (JsonElement e : devices) {
+            if (!e.isJsonObject()) continue;
+            JsonObject d = e.getAsJsonObject();
+            if (masterReceiptId.equals(Json.str(d, "id")) && "PRINTER".equals(Json.str(d, "deviceType"))) {
+                PrinterConfig p = row(d, space, null, "Master receipt printer");
+                p.id = Json.str(d, "id") + "#masterreceipt";
+                p.purpose = PrinterConfig.Purpose.MASTER_RECEIPT;
+                return p;
+            }
+        }
+        return null;
     }
 
     private static String stationName(Restaurant r, String tagId) {

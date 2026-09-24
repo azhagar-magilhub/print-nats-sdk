@@ -1,7 +1,7 @@
 /** Mirrors com.magilhub.printnats.PrintNatsConfig and friends (JSON shape the native/sidecar side parses). */
 
 export type Connection = 'LAN' | 'USB' | 'BLUETOOTH' | 'SERIAL' | 'WINDOWS_QUEUE';
-export type Purpose = 'RECEIPT' | 'MASTER_KOT' | 'STATION_KOT';
+export type Purpose = 'RECEIPT' | 'MASTER_KOT' | 'STATION_KOT' | 'MASTER_RECEIPT';
 
 export interface PrinterConfig {
   id: string;

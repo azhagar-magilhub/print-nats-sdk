@@ -66,6 +66,22 @@ public class DeviceListTest {
     }
 
     @Test
+    public void clientWithoutReceiptPrinterGetsMastersAsOfflineFallback() {
+        List<PrinterConfig> p = DeviceList.printers(devices(1, 0), "D2", restaurant());
+        assertEquals("R1#masterreceipt", p.get(0).id);
+        assertEquals(PrinterConfig.Purpose.MASTER_RECEIPT, p.get(0).purpose);
+        assertEquals("192.168.1.9", p.get(0).address);
+        for (PrinterConfig c : p) assertFalse(c.purpose == PrinterConfig.Purpose.RECEIPT);
+        // the master itself, and a client with its own receipt printer, get no fallback row
+        for (PrinterConfig c : DeviceList.printers(devices(1, 0), "D1", restaurant())) {
+            assertFalse(c.purpose == PrinterConfig.Purpose.MASTER_RECEIPT);
+        }
+        for (PrinterConfig c : DeviceList.printers(devices(0, 1), "D1", restaurant())) {
+            assertFalse(c.purpose == PrinterConfig.Purpose.MASTER_RECEIPT);
+        }
+    }
+
+    @Test
     public void configDerivesPrintersAndRoleFromDevices() {
         JsonObject c = new JsonObject();
         JsonObject nats = new JsonObject();

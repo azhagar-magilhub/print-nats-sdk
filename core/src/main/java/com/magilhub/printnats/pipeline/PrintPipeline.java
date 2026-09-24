@@ -409,8 +409,24 @@ public final class PrintPipeline implements NatsEvents {
         return n;
     }
 
+    /**
+     * Client, master unreachable (no internet / master down): the receipt goes straight to the master's receipt
+     * printer over LAN. 0 when this device has no {@link PrinterConfig.Purpose#MASTER_RECEIPT} row.
+     */
+    public int printReceiptOnMasterPrinter(JsonObject order, double cardSurcharge) {
+        PrinterConfig p = null;
+        for (PrinterConfig c : printers.all()) if (c.purpose == PrinterConfig.Purpose.MASTER_RECEIPT) p = c;
+        if (p == null) return 0;
+        log.append("print_", "Info:: Master unreachable — receipt printed directly on the master's receipt printer Or.No: "
+                + Json.str(order, "orderNo"));
+        return enqueueReceipt(order, null, cardSurcharge, p);
+    }
+
     private int enqueueReceipt(JsonObject order, String messageId, double cardSurcharge) {
-        PrinterConfig receiptPrinter = receiptPrinter();
+        return enqueueReceipt(order, messageId, cardSurcharge, receiptPrinter());
+    }
+
+    private int enqueueReceipt(JsonObject order, String messageId, double cardSurcharge, PrinterConfig receiptPrinter) {
         if (receiptPrinter == null) {
             log.append("print_", "Info:: Receipt skipped — no receipt printer configured, orderNo=" + Json.str(order, "orderNo"));
             return 0;

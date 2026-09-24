@@ -4,7 +4,11 @@ package com.magilhub.printnats.queue;
 public final class PrinterConfig {
     public enum Connection { LAN, USB, BLUETOOTH, SERIAL, WINDOWS_QUEUE }
 
-    public enum Purpose { RECEIPT, MASTER_KOT, STATION_KOT }
+    /**
+     * MASTER_RECEIPT: the master device's receipt printer, on a client without its own receipt printer. Used only
+     * when the master can't be reached (no internet / master down) — the client then prints receipts to it over LAN.
+     */
+    public enum Purpose { RECEIPT, MASTER_KOT, STATION_KOT, MASTER_RECEIPT }
 
     public String id;
     public String name;

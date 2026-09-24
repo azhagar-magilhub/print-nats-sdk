@@ -19,8 +19,9 @@ import java.nio.charset.StandardCharsets;
  *       (auto-retried indefinitely by {@code RetryPolicy.relay()});</li>
  *   <li>reply {@code {ok:false, error}} → FAULT with the master's error (Failed Print Queue, manual retry).</li>
  * </ul>
- * If this device has meanwhile become the master, the request is printed here instead (same path the master uses
- * for incoming relays).
+ * If this device has meanwhile become the master, or it has no NATS connection (no internet, modem off), the request
+ * is printed here instead, on the kitchen printers this device reaches over LAN — the same path the master uses for
+ * incoming relays — so KOTs never wait for the internet.
  */
 public final class RelayTransport implements PrinterTransport {
     public static final String WAITING_FOR_MASTER = "Waiting for master device";
@@ -33,7 +34,10 @@ public final class RelayTransport implements PrinterTransport {
         /** Core-NATS request; null when not connected, nobody answered, or timed out. */
         byte[] request(byte[] body, long timeoutMs);
 
-        /** This device is the master: print the request locally; returns the reply JSON bytes. */
+        /** false = no NATS connection (no internet): the master can't be reached, print locally. */
+        boolean isOnline();
+
+        /** Print the request on this device's printers; returns the reply JSON bytes. */
         byte[] printLocally(byte[] body);
     }
 
@@ -49,7 +53,10 @@ public final class RelayTransport implements PrinterTransport {
 
     @Override
     public PrintResult send(PrinterConfig printer, byte[] data) {
-        boolean local = link.isMaster();
+        boolean master = link.isMaster();
+        boolean offline = !master && !link.isOnline();
+        boolean local = master || offline;
+        if (offline) log.append("print_", "Info:: No NATS connection — relayed KOT printed on this device's printers");
         byte[] reply;
         try {
             reply = local ? link.printLocally(data) : link.request(data, timeoutMs);
@@ -63,7 +70,7 @@ public final class RelayTransport implements PrinterTransport {
         }
         JsonObject r = Json.parseObject(new String(reply, StandardCharsets.UTF_8));
         if (r != null && Json.isTrueBoolean(r, "ok")) {
-            log.append("print_", "Info:: Relay " + (local ? "printed locally (this device is master now)" : "accepted by master")
+            log.append("print_", "Info:: Relay " + (offline ? "printed locally (offline)" : local ? "printed locally (this device is master now)" : "accepted by master")
                     + " tickets=" + Json.str(r, "tickets"));
             return PrintResult.success();
         }

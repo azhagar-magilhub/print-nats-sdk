@@ -184,6 +184,11 @@ public final class PrintNats {
                     }
 
                     @Override
+                    public boolean isOnline() {
+                        return natsRef != null && natsRef.isConnected();
+                    }
+
+                    @Override
                     public byte[] request(byte[] body, long timeoutMs) {
                         return natsRef == null ? null : natsRef.request(subjectRef, body, timeoutMs);
                     }
@@ -393,12 +398,21 @@ public final class PrintNats {
      */
     public int relayReceipt(JsonObject orderDetails, double cardSurcharge, long timeoutMs) {
         if (masterRole) return pipeline.printReceipt(orderDetails, cardSurcharge);
-        if (nats == null) return -1;
+        if (nats == null || !nats.isConnected()) {
+            // no internet / modem off: straight to the master's receipt printer over LAN
+            int direct = pipeline.printReceiptOnMasterPrinter(orderDetails, cardSurcharge);
+            return direct > 0 ? direct : -1;
+        }
         JsonObject req = com.magilhub.printnats.pipeline.PrintRelay.request(com.magilhub.printnats.pipeline.PrintRelay.RECEIPT,
                 orderDetails, null, false, cardSurcharge, session.deviceId);
         byte[] reply = nats.request(relaySubject, req.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8), timeoutMs);
         JsonObject r = reply == null ? null
                 : com.magilhub.printnats.rules.Json.parseObject(new String(reply, java.nio.charset.StandardCharsets.UTF_8));
+        if (r == null) {
+            // connected but the master tablet didn't answer (down / off Wi-Fi): its receipt printer may still be up
+            int direct = pipeline.printReceiptOnMasterPrinter(orderDetails, cardSurcharge);
+            if (direct > 0) return direct;
+        }
         if (r == null || !com.magilhub.printnats.rules.Json.isTrueBoolean(r, "ok")) {
             if (logSink != null) {
                 logSink.append("print_", "Info:: Receipt relay to master failed Or.No: " + com.magilhub.printnats.rules.Json.str(orderDetails, "orderNo")
