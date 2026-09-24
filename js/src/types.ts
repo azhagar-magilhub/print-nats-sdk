@@ -188,6 +188,9 @@ export interface DurableOptions {
   /** Consumer name: no '.', '*', '>' or spaces. */
   durable: string;
   filterSubject: string;
+  /** Only when the consumer is CREATED now: 'all' (default) replays the stream, 'new' starts at its tail (use after a
+   *  full resync). A consumer the server lost is always re-created with 'all'. */
+  deliverPolicy?: 'all' | 'new';
 }
 
 export interface ConsumerInfo {

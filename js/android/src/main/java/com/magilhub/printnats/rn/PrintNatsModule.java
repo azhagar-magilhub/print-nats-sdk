@@ -559,11 +559,13 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
 
     /** Push durable consumer; kept across reconnects and SDK rebuilds; idempotent. */
     @ReactMethod
-    public void startDurable(final String stream, final String durable, final String filterSubject, final Promise promise) {
+    public void startDurable(final String stream, final String durable, final String filterSubject,
+                             final String deliverPolicy, final Promise promise) {
         io("E_DURABLE", promise, new Io() {
             @Override
             public Object run() throws Exception {
-                PrintNatsAndroid.startDurable(context, stream, durable, filterSubject, durableHandler);
+                PrintNatsAndroid.startDurable(context, stream, durable, filterSubject,
+                        "new".equals(deliverPolicy), durableHandler);
                 return null;
             }
         });

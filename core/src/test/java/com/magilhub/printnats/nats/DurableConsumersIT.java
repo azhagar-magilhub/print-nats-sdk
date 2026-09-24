@@ -163,6 +163,26 @@ public class DurableConsumersIT {
     }
 
     @Test
+    public void deliverNewStartsAtTheStreamTail() throws Exception {
+        NatsClient client = start();
+        client.startDurable(STREAM, "offsync-OLD", SUBJECT, collect); // makes sure the stream exists
+        client.publishDurable(SUBJECT, b("before"), "evt-before");
+        DurableMessage old = received.poll(5, TimeUnit.SECONDS);
+        assertNotNull(old);
+        assertTrue(client.ackDurable(old.token));
+
+        client.startDurable(STREAM, "offsync-NEW", SUBJECT, true, collect); // new tablet after a full resync
+        client.publishDurable(SUBJECT, b("after"), "evt-after");
+        List<String> got = new ArrayList<>();
+        DurableMessage m;
+        while ((m = received.poll(2, TimeUnit.SECONDS)) != null) {
+            if ("offsync-NEW".equals(m.durable)) got.add(s(m));
+            client.ackDurable(m.token);
+        }
+        assertEquals("only messages after creation", java.util.Collections.singletonList("after"), got);
+    }
+
+    @Test
     public void nakWithDelayRedeliversLater() throws Exception {
         NatsClient client = start();
         client.startDurable(STREAM, "offsync-D1", SUBJECT, collect);

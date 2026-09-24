@@ -365,6 +365,12 @@ public final class NatsClient {
         durables.startDurable(stream, durable, filterSubject, handler);
     }
 
+    /** As above; {@code deliverNew}: a consumer created now starts at the stream tail (DeliverPolicy.New). */
+    public void startDurable(String stream, String durable, String filterSubject, boolean deliverNew,
+                             DurableHandler handler) throws Exception {
+        durables.startDurable(stream, durable, filterSubject, deliverNew, handler);
+    }
+
     /** Stop receiving; the consumer (and its ack floor) stays on the server. */
     public void stopDurable(String durable) {
         durables.stopDurable(durable);

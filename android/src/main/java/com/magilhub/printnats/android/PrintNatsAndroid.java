@@ -46,11 +46,14 @@ public final class PrintNatsAndroid {
     private static final class DurableSpec {
         final String stream;
         final String filterSubject;
+        final boolean deliverNew;
         final com.magilhub.printnats.nats.DurableHandler handler;
 
-        DurableSpec(String stream, String filterSubject, com.magilhub.printnats.nats.DurableHandler handler) {
+        DurableSpec(String stream, String filterSubject, boolean deliverNew,
+                    com.magilhub.printnats.nats.DurableHandler handler) {
             this.stream = stream;
             this.filterSubject = filterSubject;
+            this.deliverNew = deliverNew;
             this.handler = handler;
         }
     }
@@ -72,14 +75,15 @@ public final class PrintNatsAndroid {
 
     /** See {@link PrintNats#startDurable}; kept across SDK rebuilds (configure / restart). */
     public static void startDurable(Context context, String stream, String durable, String filterSubject,
-                                    com.magilhub.printnats.nats.DurableHandler handler) throws Exception {
+                                    boolean deliverNew, com.magilhub.printnats.nats.DurableHandler handler)
+            throws Exception {
         PrintNats s;
         synchronized (PrintNatsAndroid.class) {
-            durables.put(durable, new DurableSpec(stream, filterSubject, handler));
+            durables.put(durable, new DurableSpec(stream, filterSubject, deliverNew, handler));
             s = get(context);
         }
         if (s == null) throw new IllegalStateException("PrintNats not configured");
-        s.startDurable(stream, durable, filterSubject, handler);
+        s.startDurable(stream, durable, filterSubject, deliverNew, handler);
     }
 
     public static void stopDurable(Context context, String durable) {
@@ -118,7 +122,7 @@ public final class PrintNatsAndroid {
         for (java.util.Map.Entry<String, DurableSpec> e : durables.entrySet()) {
             try {
                 DurableSpec d = e.getValue();
-                s.startDurable(d.stream, e.getKey(), d.filterSubject, d.handler);
+                s.startDurable(d.stream, e.getKey(), d.filterSubject, d.deliverNew, d.handler);
             } catch (Exception ignored) {
                 // registered; bound on connect
             }

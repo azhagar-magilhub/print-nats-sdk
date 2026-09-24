@@ -9,7 +9,7 @@ Failed Print Queue survives restarts.
 ## Install (React Native app)
 
 ```json
-"@merchant/print-nats": "git+https://github.com/azhagar-magilhub/print-nats-sdk.git#v0.1.0"
+"@merchant/print-nats": "git+https://github.com/azhagar-magilhub/print-nats-sdk.git#v0.2.0"
 ```
 
 `yarn install` fetches the tag; the RN bridge (`js/android`) compiles `core` + `android` from that checkout

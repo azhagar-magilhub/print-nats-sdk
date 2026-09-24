@@ -78,6 +78,8 @@ final class DurableConsumers {
         final String stream;
         final String name;
         final String filterSubject;
+        /** true: a consumer created for this registration starts at the stream tail (DeliverPolicy.New). */
+        final boolean deliverNew;
         volatile DurableHandler handler;
         JetStreamSubscription sub;
         Dispatcher subDispatcher;
@@ -86,10 +88,11 @@ final class DurableConsumers {
         /** token → message, oldest first; bounded (evicted = left unacked → redelivered). */
         final LinkedHashMap<String, Message> pending = new LinkedHashMap<>();
 
-        Durable(String stream, String name, String filterSubject, DurableHandler handler) {
+        Durable(String stream, String name, String filterSubject, boolean deliverNew, DurableHandler handler) {
             this.stream = stream;
             this.name = name;
             this.filterSubject = filterSubject;
+            this.deliverNew = deliverNew;
             this.handler = handler;
         }
 
@@ -157,7 +160,7 @@ final class DurableConsumers {
                 }
                 if (bound) {
                     if (info(nc, d.stream, d.name) == null) {
-                        createConsumer(nc, d, d.deliverSubject, d.deliverGroup);
+                        createConsumer(nc, d, d.deliverSubject, d.deliverGroup, DeliverPolicy.All);
                         events.emit("durable_recreated", d.name);
                     }
                 } else {
@@ -246,6 +249,16 @@ final class DurableConsumers {
      */
     void startDurable(String stream, String name, String filterSubject, DurableHandler handler)
             throws IOException, JetStreamApiException {
+        startDurable(stream, name, filterSubject, false, handler);
+    }
+
+    /**
+     * {@code deliverNew}: when the consumer has to be CREATED now (it doesn't exist yet), start it at the stream tail
+     * instead of replaying the whole stream — for a tablet that just did a full resync from the server. A consumer
+     * the server lost during an outage is still re-created with DeliverPolicy.All (it must catch up).
+     */
+    void startDurable(String stream, String name, String filterSubject, boolean deliverNew, DurableHandler handler)
+            throws IOException, JetStreamApiException {
         if (stream == null || stream.isEmpty() || name == null || name.isEmpty() || filterSubject == null
                 || filterSubject.isEmpty() || handler == null) {
             throw new IllegalArgumentException("stream, durable, filterSubject and handler are required");
@@ -261,7 +274,7 @@ final class DurableConsumers {
                 if (d.sub != null || connection == null) return;
             } else {
                 if (d != null) unsubscribe(d);
-                d = new Durable(stream, name, filterSubject, handler);
+                d = new Durable(stream, name, filterSubject, deliverNew, handler);
                 durables.put(name, d);
                 if (connection == null) return;
             }
@@ -306,7 +319,7 @@ final class DurableConsumers {
         if (ci == null) {
             deliverSubject = "_INBOX.durable." + d.name;
             deliverGroup = d.name;
-            createConsumer(nc, d, deliverSubject, deliverGroup);
+            createConsumer(nc, d, deliverSubject, deliverGroup, d.deliverNew ? DeliverPolicy.New : DeliverPolicy.All);
             events.emit("durable_created", d.name);
         } else {
             ConsumerConfiguration cc = ci.getConsumerConfiguration();
@@ -345,14 +358,14 @@ final class DurableConsumers {
         events.emit("durable_bound", d.name);
     }
 
-    private void createConsumer(Connection nc, Durable d, String deliverSubject, String deliverGroup)
-            throws IOException, JetStreamApiException {
+    private void createConsumer(Connection nc, Durable d, String deliverSubject, String deliverGroup,
+                                DeliverPolicy policy) throws IOException, JetStreamApiException {
         nc.jetStreamManagement().addOrUpdateConsumer(d.stream, ConsumerConfiguration.builder()
                 .durable(d.name)
                 .deliverSubject(deliverSubject)
                 .deliverGroup(deliverGroup)
                 .filterSubject(d.filterSubject)
-                .deliverPolicy(DeliverPolicy.All)
+                .deliverPolicy(policy)
                 .ackPolicy(AckPolicy.Explicit)
                 .ackWait(Duration.ofMillis(config.durableAckWaitMs))
                 .maxAckPending(config.durableMaxAckPending)

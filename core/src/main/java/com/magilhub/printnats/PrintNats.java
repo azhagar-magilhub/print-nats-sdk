@@ -681,6 +681,12 @@ public final class PrintNats {
         requireNats().startDurable(stream, durable, filterSubject, handler);
     }
 
+    /** As above; {@code deliverNew}: a consumer created now starts at the stream tail. */
+    public void startDurable(String stream, String durable, String filterSubject, boolean deliverNew,
+                             com.magilhub.printnats.nats.DurableHandler handler) throws Exception {
+        requireNats().startDurable(stream, durable, filterSubject, deliverNew, handler);
+    }
+
     public void stopDurable(String durable) {
         if (nats != null) nats.stopDurable(durable);
     }

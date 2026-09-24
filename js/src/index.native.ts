@@ -127,8 +127,8 @@ export const PrintNats: PrintNatsApi = {
     await requireNative().ensureStream(name, subjects, maxAgeMs);
   },
   publishDurable: (subject, data, msgId) => requireNative().publishDurable(subject, data, msgId),
-  async startDurable({ stream, durable, filterSubject }) {
-    await requireNative().startDurable(stream, durable, filterSubject);
+  async startDurable({ stream, durable, filterSubject, deliverPolicy }) {
+    await requireNative().startDurable(stream, durable, filterSubject, deliverPolicy ?? 'all');
   },
   async stopDurable(durable) {
     await requireNative().stopDurable(durable);
