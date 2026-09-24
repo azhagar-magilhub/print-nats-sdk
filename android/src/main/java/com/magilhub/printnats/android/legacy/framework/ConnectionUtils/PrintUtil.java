@@ -3464,6 +3464,14 @@ public class PrintUtil {
      * path and the ESC/POS bitmap paths. Row height is fixed by logoHeightPx;
      * the whole row is clamped DOWN if it is wider than maxWidthPx.
      */
+    /**
+     * Drawable id by name from the host app's merged resources — works whether this module is an AAR (its own R
+     * class) or compiled from source into the RN bridge (no com.magilhub.printnats.android.R there). 0 if missing.
+     */
+    private static int drawableId(Context ctx, String name) {
+        return ctx.getResources().getIdentifier(name, "drawable", ctx.getPackageName());
+    }
+
     private static Bitmap buildPaymentMethodsStrip(Context ctx, List<String> cards,
                                                    int logoHeightPx, int maxWidthPx) {
         if (ctx == null || cards == null || cards.isEmpty() || logoHeightPx <= 0) {
@@ -3472,12 +3480,12 @@ public class PrintUtil {
 
         // Canonical token -> drawable, in Figma display order.
         LinkedHashMap<String, Integer> catalog = new LinkedHashMap<>();
-        catalog.put("mastercard", com.magilhub.printnats.android.R.drawable.pm_mastercard);
-        catalog.put("visa", com.magilhub.printnats.android.R.drawable.pm_visa);
-        catalog.put("amex", com.magilhub.printnats.android.R.drawable.pm_amex);
-        catalog.put("discover", com.magilhub.printnats.android.R.drawable.pm_discover);
-        catalog.put("applepay", com.magilhub.printnats.android.R.drawable.pm_applepay);
-        catalog.put("googlepay", com.magilhub.printnats.android.R.drawable.pm_googlepay);
+        catalog.put("mastercard", drawableId(ctx, "pm_mastercard"));
+        catalog.put("visa", drawableId(ctx, "pm_visa"));
+        catalog.put("amex", drawableId(ctx, "pm_amex"));
+        catalog.put("discover", drawableId(ctx, "pm_discover"));
+        catalog.put("applepay", drawableId(ctx, "pm_applepay"));
+        catalog.put("googlepay", drawableId(ctx, "pm_googlepay"));
 
         // Normalize what the merchant accepts, folding known aliases.
         java.util.Set<String> accepted = new java.util.HashSet<>();
@@ -3500,7 +3508,7 @@ public class PrintUtil {
         List<Bitmap> logos = new ArrayList<>();
         int sumW = 0;
         for (java.util.Map.Entry<String, Integer> e : catalog.entrySet()) {
-            if (!accepted.contains(e.getKey())) continue;
+            if (!accepted.contains(e.getKey()) || e.getValue() == 0) continue;
             Bitmap raw = android.graphics.BitmapFactory.decodeResource(
                     ctx.getResources(), e.getValue(), opts);
             if (raw == null) continue;
