@@ -1,0 +1,25 @@
+{
+  "name": "@merchant/print-nats",
+  "version": "0.1.0",
+  "description": "Shared print + NATS SDK. Installed from git: the React Native bridge (js/android) compiles the Java core and Android module from source.",
+  "main": "js/src/index.ts",
+  "react-native": "js/src/index.native.ts",
+  "browser": "js/src/index.ts",
+  "types": "js/src/index.ts",
+  "files": [
+    "js/src",
+    "js/android/build.gradle",
+    "js/android/src",
+    "core/src/main",
+    "android/src/main",
+    "react-native.config.js"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
+  "peerDependencies": {
+    "react-native": ">=0.63"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {"optional": true}
+  }
+}
