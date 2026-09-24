@@ -62,6 +62,9 @@ public final class PrintNats {
     }
 
     private final NatsClient nats;
+    /** LAN mode, master only: the cloud connection (PRINTKOT + forwarding status to the cloud). */
+    private final NatsClient cloud;
+    static final String STATUS_BRIDGE_DURABLE = "statusbridge";
     private final PrintQueue queue;
     private final PrintPipeline pipeline;
     private final StatusPublisher status;
@@ -121,6 +124,7 @@ public final class PrintNats {
         final PrintNats self = this;
         final Listener listener = b.listener;
         final PipelineHolder holder = new PipelineHolder();
+        if (b.natsConfig != null && b.natsConfig.lanMode) b.natsConfig.consumePrintKot = false;
         this.nats = b.natsConfig == null ? null : new NatsClient(b.natsConfig, new com.magilhub.printnats.nats.NatsEvents() {
             @Override
             public void onPrintMessage(com.magilhub.printnats.nats.InboundMessage message) {
@@ -148,6 +152,31 @@ public final class PrintNats {
                 if (listener != null) listener.onAppMessage(subject, data);
             }
         }, log, b.outboxStore);
+        this.cloud = b.natsConfig == null || !b.natsConfig.lanMode || b.natsConfig.cloudServerUrls == null
+                || b.natsConfig.cloudServerUrls.isEmpty() ? null
+                : new NatsClient(b.natsConfig.cloudCopy(), new com.magilhub.printnats.nats.NatsEvents() {
+            @Override
+            public void onPrintMessage(com.magilhub.printnats.nats.InboundMessage message) {
+                holder.pipeline.onPrintMessage(message); // online orders from the backend
+            }
+
+            @Override
+            public void onStatusEvent(String subject, byte[] data) {
+            }
+
+            @Override
+            public void onStatusHistoryEvent(String subject, byte[] data) {
+            }
+
+            @Override
+            public void onConnectionEvent(String type, String detail) {
+                holder.pipeline.onConnectionEvent("cloud_" + type, detail);
+            }
+
+            @Override
+            public void onAppMessage(String subject, byte[] data) {
+            }
+        }, log, b.cloudOutboxStore);
         this.status = new StatusPublisher(nats == null ? new NatsClient(new NatsConfig(), null, log) : nats, lookup, log,
                 b.deviceState, b.session.locationId, b.session.deviceId);
         holder.queue = queue;
@@ -276,9 +305,47 @@ public final class PrintNats {
         queue.recover();
         pipeline.recover();
         if (nats != null) nats.start();
+        if (cloud != null) {
+            cloud.start();
+            startStatusBridge();
+        }
+    }
+
+    /**
+     * Master in LAN mode: every device publishes print status to the shop's local server; forward each one to the
+     * cloud PRINTEVENTSTATUS stream. Acked once handed to the cloud connection, which buffers (outbox) while the
+     * internet is out, so nothing is lost and the local ack floor keeps moving.
+     */
+    private void startStatusBridge() {
+        final NatsClient cloudRef = cloud;
+        final NatsClient localRef = nats;
+        try {
+            nats.startDurable(nats.config().statusStreamName, STATUS_BRIDGE_DURABLE,
+                    "printeventstatus." + nats.config().locationId + ".>", true,
+                    new com.magilhub.printnats.nats.DurableHandler() {
+                        @Override
+                        public boolean onMessage(com.magilhub.printnats.nats.DurableMessage m) {
+                            cloudRef.publish(m.subject, m.data); // confirmed now, or kept in the cloud outbox
+                            localRef.ackDurable(m.token);
+                            return true;
+                        }
+                    });
+        } catch (Exception e) {
+            if (logSink != null) logSink.append("nats_", "Status bridge start failed: " + e);
+        }
+    }
+
+    /** LAN mode, master: the cloud connection is up. */
+    public boolean isCloudConnected() {
+        return cloud != null && cloud.isConnected();
+    }
+
+    public boolean hasCloudLink() {
+        return cloud != null;
     }
 
     public void stop() {
+        if (cloud != null) cloud.stop();
         if (nats != null) nats.stop();
         pipeline.shutdown();
         queue.shutdown();
@@ -749,6 +816,7 @@ public final class PrintNats {
         private Listener listener;
         private Boolean dataCapDevice;
         private com.magilhub.printnats.spi.OutboxStore outboxStore;
+        private com.magilhub.printnats.spi.OutboxStore cloudOutboxStore;
         private com.magilhub.printnats.discovery.IpOverrides ipOverrides;
         private com.magilhub.printnats.spi.ArpTable arpTable;
         private com.magilhub.printnats.discovery.MacLocator macLocator;
@@ -805,6 +873,12 @@ public final class PrintNats {
         }
 
         /** Durable store for status events that couldn't be published (default: in memory). */
+        /** LAN mode, master: durable buffer for status forwarded to the cloud while the internet is out. */
+        public Builder cloudOutboxStore(com.magilhub.printnats.spi.OutboxStore s) {
+            this.cloudOutboxStore = s;
+            return this;
+        }
+
         public Builder outboxStore(com.magilhub.printnats.spi.OutboxStore s) {
             this.outboxStore = s;
             return this;

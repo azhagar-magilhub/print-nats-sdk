@@ -9,7 +9,7 @@ Failed Print Queue survives restarts.
 ## Install (React Native app)
 
 ```json
-"@merchant/print-nats": "git+https://github.com/azhagar-magilhub/print-nats-sdk.git#v0.2.1"
+"@merchant/print-nats": "git+https://github.com/azhagar-magilhub/print-nats-sdk.git#v0.3.0"
 ```
 
 `yarn install` fetches the tag; the RN bridge (`js/android`) compiles `core` + `android` from that checkout
@@ -120,6 +120,29 @@ await PrintNats.stopDurable(`offsync-${deviceId}`);   // stop receiving; the con
 - Java (`PrintNats` / `NatsClient`): `ensureStream`, `publishDurable`, `startDurable(stream, durable, filter,
   DurableHandler)`, `stopDurable`, `ackDurable` / `nakDurable` / `termDurable`, `consumerInfo`, `listConsumers`,
   `deleteConsumer`. A `DurableHandler` returning false leaves the message unacked.
+
+### LAN mode — devices talk only over shop Wi-Fi (Android)
+
+The master tablet runs the official **nats-server** (bundled as `jniLibs/<abi>/libnatsserver.so`); every device
+connects to it, so relay, `OFFSYNC`, CartVue and print status work with **no internet**. Only the master connects to
+the cloud: it consumes `PRINTKOT` (online orders), acks the backend, and forwards every device's print status to the
+cloud `PRINTEVENTSTATUS` stream (buffered on disk while the internet is out).
+
+```ts
+const authToken = await PrintNats.lanToken(LAN_SECRET, locationId);           // same on every device, offline
+// master
+nats: {serverUrls: 'nats://127.0.0.1:4222', authToken, lanMode: true, serveLocal: true, cloudServerUrls: CLOUD_URL}
+// client
+nats: {serverUrls: `nats://${masterIp}:4222`, authToken, lanMode: true}
+await PrintNats.findMaster(locationId, 4000);  // 'ip:port' via NSD (_maghilnats._tcp), or null
+await PrintNats.localIp();                     // master: publish it in its device row
+await PrintNats.lanStatus();                   // {connected, serving, serverRunning, cloudLink, cloudConnected, serverUrl}
+```
+
+Host setup: `printNatsLocalServer=true` in `gradle.properties` (the build downloads nats-server v2.15.0 from
+github.com/nats-io/nats-server and checks its SHA256) and `packagingOptions.jniLibs.useLegacyPackaging = true` (Android
+only executes extracted native libs). Shop network: master on a fixed IP (DHCP reservation), router client isolation
+off, master on charger. maghilOrder reference: `src/printing/lanLink.ts`.
 
 ## 5. Helpers (`js/src/printers.ts`)
 

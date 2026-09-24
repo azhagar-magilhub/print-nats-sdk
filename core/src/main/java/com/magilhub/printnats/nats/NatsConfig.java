@@ -18,6 +18,27 @@ public final class NatsConfig {
     /** Dev only: self-provision stream + consumer (e.g. local nats-server). */
     public boolean testMode;
 
+    // ---- LAN mode: devices talk only to the master's local nats-server; the master alone reaches the cloud ----
+    /**
+     * {@link #serverUrls} is the shop's local server (the master's nats-server). This connection then carries relay,
+     * host durables (OFFSYNC), app messaging and print status, but never consumes the backend PRINTKOT stream.
+     */
+    public boolean lanMode;
+    /**
+     * Master in LAN mode: the cloud NATS URL(s). A second connection consumes PRINTKOT (online orders), sends the
+     * backend acks and forwards every device's print status from the local server to the cloud. Null on clients.
+     */
+    public String cloudServerUrls;
+    public String cloudAuthToken;
+    /** Master in LAN mode: the host runs the local nats-server (see LocalNatsServer). */
+    public boolean serveLocal;
+    public int localPort = 4222;
+
+    /** Consume the PRINTKOT stream on this connection (false for a LAN-mode local connection). */
+    public boolean consumePrintKot = true;
+    /** Subscribe to print status (false for the master's cloud connection — status is read from the local server). */
+    public boolean subscribeStatus = true;
+
     public long connectTimeoutMs = 30_000;
     public long reconnectWaitMs = 5_000;
     public long initialBackoffMs = 5_000;
@@ -55,5 +76,44 @@ public final class NatsConfig {
     /** Application-level receipt ack to BE (core NATS, not JetStream) — PrintAckConsumer listens on printack.>. */
     public String backendAckSubject() {
         return "printack." + deviceSubject();
+    }
+
+    /** Shop-local auth token: both master and clients derive it offline from the location id and a shared app key. */
+    public static String lanToken(String secret, String locationId) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    (secret == null ? "" : secret).getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] h = mac.doFinal((locationId == null ? "" : locationId).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder b = new StringBuilder();
+            for (int i = 0; i < 16; i++) b.append(String.format("%02x", h[i] & 0xff));
+            return b.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("HmacSHA256 unavailable", e);
+        }
+    }
+
+    /** Copy for the master's cloud connection: PRINTKOT + backend ack only. */
+    public NatsConfig cloudCopy() {
+        NatsConfig c = new NatsConfig();
+        c.serverUrls = cloudServerUrls;
+        c.authToken = cloudAuthToken;
+        c.locationId = locationId;
+        c.deviceId = deviceId;
+        c.streamName = streamName;
+        c.consumerName = consumerName;
+        c.isMaster = true;
+        c.testMode = testMode;
+        c.connectTimeoutMs = connectTimeoutMs;
+        c.reconnectWaitMs = reconnectWaitMs;
+        c.initialBackoffMs = initialBackoffMs;
+        c.maxBackoffMs = maxBackoffMs;
+        c.ackWaitMs = ackWaitMs;
+        c.pendingPublishCap = Math.max(pendingPublishCap, 2000); // every device's status while the internet is out
+        c.statusStreamName = statusStreamName;
+        c.statusStreamMaxAgeMs = statusStreamMaxAgeMs;
+        c.consumePrintKot = true;
+        c.subscribeStatus = false;
+        return c;
     }
 }

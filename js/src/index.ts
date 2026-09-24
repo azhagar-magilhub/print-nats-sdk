@@ -142,6 +142,10 @@ export const PrintNats: PrintNatsApi = {
   consumerInfo: () => notSupported('consumerInfo'),
   listConsumers: () => notSupported('listConsumers'),
   deleteConsumer: () => notSupported('deleteConsumer'),
+  lanToken: () => notSupported('lanToken'),
+  findMaster: () => notSupported('findMaster'),
+  localIp: () => notSupported('localIp'),
+  lanStatus: () => notSupported('lanStatus'),
   submitMessage: (messageType: string, messageData: string, messageId: string) =>
     call<boolean>('messages/submit', { messageType, messageData, messageId }),
 };

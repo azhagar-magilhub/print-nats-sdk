@@ -122,6 +122,10 @@ public final class NatsClient {
         });
     }
 
+    public NatsConfig config() {
+        return config;
+    }
+
     public synchronized void start() {
         if (running.getAndSet(true)) return;
         loopThread = new Thread(new Runnable() {
@@ -564,18 +568,28 @@ public final class NatsClient {
 
                 JetStream js = nc.jetStream();
                 jetStream = js;
+                // Stream first: a JetStream publish to a subject with no stream is delivered but never acked,
+                // so flushing first would keep (and later re-send) the event. (Legacy had the same order.) Also
+                // before the host durables: the master's status bridge consumes this stream (LAN mode).
+                ensureStatusStream(nc);
                 // Host streams + durables before the print consumer bind, which may throw and restart the loop.
                 durables.onConnected(nc);
-                // Stream first: a JetStream publish to a subject with no stream is delivered but never acked,
-                // so flushing first would keep (and later re-send) the event. (Legacy had the same order.)
-                ensureStatusStream(nc);
                 flushPendingPublishes(js);
+
+                if (!config.consumePrintKot) {
+                    // LAN-mode local connection: no backend stream here — the master's cloud connection has it.
+                    emitConnectionEvent("subscribed", "local server (no PRINTKOT)");
+                    backoff = config.initialBackoffMs;
+                    if (config.subscribeStatus) startStatusSubscriptions(js);
+                    while (running.get()) Thread.sleep(1000); // jnats keeps reconnecting the same connection
+                    continue;
+                }
                 if (config.testMode) provisionForTest(nc);
 
                 JetStreamSubscription sub = bindPrintConsumer(nc, js);
                 emitConnectionEvent("subscribed", "stream=" + config.streamName + " consumer=" + config.consumer());
                 backoff = config.initialBackoffMs;
-                startStatusSubscriptions(js);
+                if (config.subscribeStatus) startStatusSubscriptions(js);
 
                 while (running.get()) {
                     Message msg = sub.nextMessage(Duration.ofSeconds(30));

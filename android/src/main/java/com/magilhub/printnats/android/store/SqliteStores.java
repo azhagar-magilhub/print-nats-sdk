@@ -22,7 +22,7 @@ import java.util.List;
  */
 public final class SqliteStores extends SQLiteOpenHelper {
     public static final String DB_NAME = "print_nats_sdk.db";
-    private static final int VERSION = 3;
+    private static final int VERSION = 4;
 
     public SqliteStores(Context context) {
         super(context.getApplicationContext(), DB_NAME, null, VERSION);
@@ -37,10 +37,16 @@ public final class SqliteStores extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE inbound (key TEXT PRIMARY KEY, message_type TEXT, message_data TEXT, message_id TEXT,"
                 + " received_at INTEGER, done INTEGER NOT NULL DEFAULT 0)");
         createOutbox(db);
+        createCloudOutbox(db);
     }
 
     private static void createOutbox(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, data BLOB NOT NULL)");
+    }
+
+    /** LAN mode, master: status forwarded to the cloud while the internet is out. */
+    private static void createCloudOutbox(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE outbox_cloud (id INTEGER PRIMARY KEY AUTOINCREMENT, subject TEXT NOT NULL, data BLOB NOT NULL)");
     }
 
     @Override
@@ -48,6 +54,7 @@ public final class SqliteStores extends SQLiteOpenHelper {
         // One migration per version; never drop data.
         if (oldVersion < 2) db.execSQL("ALTER TABLE jobs ADD COLUMN is_station INTEGER NOT NULL DEFAULT 0");
         if (oldVersion < 3) createOutbox(db);
+        if (oldVersion < 4) createCloudOutbox(db);
     }
 
     public JobStore jobStore() {
@@ -59,24 +66,34 @@ public final class SqliteStores extends SQLiteOpenHelper {
     }
 
     public com.magilhub.printnats.spi.OutboxStore outboxStore() {
-        return new Outbox();
+        return new Outbox("outbox");
+    }
+
+    public com.magilhub.printnats.spi.OutboxStore cloudOutboxStore() {
+        return new Outbox("outbox_cloud");
     }
 
     // ---- outbox (unconfirmed status publishes) ---------------------------------------------------------
 
     private final class Outbox implements com.magilhub.printnats.spi.OutboxStore {
+        private final String table;
+
+        Outbox(String table) {
+            this.table = table;
+        }
+
         @Override
         public void add(String subject, byte[] data) {
             ContentValues v = new ContentValues();
             v.put("subject", subject);
             v.put("data", data);
-            getWritableDatabase().insert("outbox", null, v);
+            getWritableDatabase().insert(table, null, v);
         }
 
         @Override
         public List<Entry> peek(int max) {
             List<Entry> out = new ArrayList<>();
-            try (Cursor c = getReadableDatabase().query("outbox", null, null, null, null, null, "id", String.valueOf(max))) {
+            try (Cursor c = getReadableDatabase().query(table, null, null, null, null, null, "id", String.valueOf(max))) {
                 while (c.moveToNext()) out.add(new Entry(c.getLong(0), c.getString(1), c.getBlob(2)));
             }
             return out;
@@ -84,12 +101,12 @@ public final class SqliteStores extends SQLiteOpenHelper {
 
         @Override
         public void remove(long id) {
-            getWritableDatabase().delete("outbox", "id=?", new String[]{String.valueOf(id)});
+            getWritableDatabase().delete(table, "id=?", new String[]{String.valueOf(id)});
         }
 
         @Override
         public int size() {
-            try (Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM outbox", null)) {
+            try (Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM " + table, null)) {
                 return c.moveToFirst() ? c.getInt(0) : 0;
             }
         }

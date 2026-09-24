@@ -167,6 +167,10 @@ export const PrintNats: PrintNatsApi = {
   async deleteConsumer(stream, durable) {
     await requireNative().deleteConsumer(stream, durable);
   },
+  lanToken: (secret, locationId) => requireNative().lanToken(secret, locationId),
+  findMaster: (locationId, timeoutMs = 5000) => requireNative().findMaster(locationId, timeoutMs),
+  localIp: () => requireNative().localIp(),
+  lanStatus: () => requireNative().lanStatus(),
   submitMessage: (messageType, messageData, messageId) =>
     requireNative().submitMessage(messageType, messageData, messageId),
   async getIpOverrides(): Promise<IpOverrides> {

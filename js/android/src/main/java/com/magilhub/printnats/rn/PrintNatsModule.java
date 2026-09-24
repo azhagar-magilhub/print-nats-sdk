@@ -253,6 +253,63 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
         promise.resolve(s != null && s.isNatsConnected());
     }
 
+    // ---- LAN mode (devices talk only to the master's local server) ---------------------------------------
+
+    /** Shop-local auth token for the master's server, derived from the location id and the app's shared key. */
+    @ReactMethod
+    public void lanToken(String secret, String locationId, Promise promise) {
+        promise.resolve(com.magilhub.printnats.nats.NatsConfig.lanToken(secret, locationId));
+    }
+
+    /** "host:port" of this location's master server on the shop network (NSD), or null. */
+    @ReactMethod
+    public void findMaster(final String locationId, final double timeoutMs, final Promise promise) {
+        io("E_FIND_MASTER", promise, new Io() {
+            @Override
+            public Object run() throws Exception {
+                return com.magilhub.printnats.android.lan.LanDiscovery.find(context, locationId, (long) timeoutMs);
+            }
+        });
+    }
+
+    /** This device's IPv4 address on the shop network (Wi-Fi / Ethernet), or null. */
+    @ReactMethod
+    public void localIp(Promise promise) {
+        try {
+            String best = null;
+            for (java.net.NetworkInterface ni : java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (java.net.InetAddress a : java.util.Collections.list(ni.getInetAddresses())) {
+                    if (!(a instanceof java.net.Inet4Address) || a.isLoopbackAddress()) continue;
+                    String name = ni.getName();
+                    if (name.startsWith("wlan") || name.startsWith("eth")) {
+                        promise.resolve(a.getHostAddress());
+                        return;
+                    }
+                    if (best == null && a.isSiteLocalAddress()) best = a.getHostAddress();
+                }
+            }
+            promise.resolve(best);
+        } catch (Throwable t) {
+            promise.resolve(null);
+        }
+    }
+
+    /** {connected, serving, serverRunning, cloudLink, cloudConnected} for Dock status cards. */
+    @ReactMethod
+    public void lanStatus(Promise promise) {
+        PrintNats s = PrintNatsAndroid.get(context);
+        com.magilhub.printnats.PrintNatsConfig c = PrintNatsAndroid.savedConfig(context);
+        WritableMap m = Arguments.createMap();
+        m.putBoolean("connected", s != null && s.isNatsConnected());
+        m.putBoolean("serving", c != null && c.nats != null && c.nats.serveLocal);
+        m.putBoolean("serverRunning", com.magilhub.printnats.android.lan.LanServer.isRunning());
+        m.putBoolean("cloudLink", s != null && s.hasCloudLink());
+        m.putBoolean("cloudConnected", s != null && s.isCloudConnected());
+        m.putString("serverUrl", c != null && c.nats != null ? c.nats.serverUrls : null);
+        promise.resolve(m);
+    }
+
     // ---- printing from the UI -----------------------------------------------------------------------
 
     @ReactMethod

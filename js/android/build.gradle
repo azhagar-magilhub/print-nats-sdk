@@ -35,7 +35,18 @@ def buildFromSource = rootProject.name != 'print-nats-sdk' &&
         new File(sdkRoot, 'core/src/main/java').exists() &&
         !rootProject.hasProperty('printNatsFromMaven')
 
+// LAN mode (maghilOrder): bundle the official nats-server so the master can run the shop's local server. Opt-in —
+// `printNatsLocalServer=true` in the host's gradle.properties — so other hosts don't carry ~17 MB per ABI.
+def bundleLocalServer = buildFromSource && rootProject.hasProperty('printNatsLocalServer') &&
+        rootProject.property('printNatsLocalServer').toString() == 'true'
+if (bundleLocalServer) {
+    apply from: "${sdkRoot}/android/natsserver.gradle"
+}
+
 android {
+    if (bundleLocalServer) {
+        sourceSets.main.jniLibs.srcDirs += [natsServerJniDir]
+    }
     if (supportsNamespace()) {
         namespace "com.magilhub.printnats.rn"
         sourceSets {
@@ -87,4 +98,8 @@ dependencies {
     } else {
         implementation "com.magilhub:print-nats-android:${safeExtGet('printNatsVersion', '0.1.0-SNAPSHOT')}"
     }
+}
+
+if (bundleLocalServer) {
+    preBuild.dependsOn fetchNatsServer
 }

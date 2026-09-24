@@ -152,6 +152,7 @@ public final class PrintNatsAndroid {
     public static synchronized PrintNats configure(Context context, PrintNatsConfig config) {
         prefs(context).edit().putString(KEY_CONFIG, config.toJson()).apply();
         if (instance != null) instance.stop();
+        com.magilhub.printnats.android.lan.LanServer.sync(context, config.nats, new AndroidLogSink(context.getApplicationContext()));
         instance = build(context, config);
         applyHostState(instance);
         instance.start();
@@ -163,6 +164,7 @@ public final class PrintNatsAndroid {
         if (instance == null) {
             PrintNatsConfig c = savedConfig(context);
             if (c == null) return null;
+            com.magilhub.printnats.android.lan.LanServer.sync(context, c.nats, new AndroidLogSink(context.getApplicationContext()));
             instance = build(context, c);
             applyHostState(instance);
             instance.start();
@@ -173,6 +175,7 @@ public final class PrintNatsAndroid {
     public static synchronized void stop() {
         if (instance != null) instance.stop();
         instance = null;
+        com.magilhub.printnats.android.lan.LanServer.stop();
     }
 
     /** Update restaurantDetails on the running SDK and persist it. */
@@ -231,6 +234,7 @@ public final class PrintNatsAndroid {
                 .jobStore(db.jobStore())
                 .inboundStore(db.inboundStore())
                 .outboxStore(db.outboxStore())
+                .cloudOutboxStore(db.cloudOutboxStore())
                 .transport(transport)
                 .starEncoder(new StarIoExtEncoder())
                 .receiptRenderer(receiptRenderer != null ? receiptRenderer

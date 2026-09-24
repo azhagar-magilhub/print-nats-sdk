@@ -1,0 +1,69 @@
+// Bundles the official nats-server (Apache-2.0, github.com/nats-io/nats-server) as jniLibs/<abi>/libnatsserver.so,
+// so the master device can run the shop's local NATS server (LAN mode: devices talk to each other with no
+// internet). Android only lets apps exec files from nativeLibraryDir, hence the .so name; the host app must extract
+// native libs (packaging.jniLibs.useLegacyPackaging = true).
+//
+// The binaries are downloaded at build time (not committed: ~70 MB) from the pinned release and verified against
+// the release's SHA256SUMS; a checksum mismatch fails the build. Cached in <sdk>/android/build/natsserver.
+//
+// Usage (after `apply from:`): android.sourceSets.main.jniLibs.srcDirs += natsServerJniDir
+//                              preBuild.dependsOn fetchNatsServer
+
+import java.security.MessageDigest
+
+def natsServerVersion = 'v2.15.0'
+def natsServerChecksums = [
+        'arm64'  : 'cdc208f5a3f42963a52b6ab06ef65626bb870315dc936e26ba571780c6351112',
+        'arm7'   : 'ec5f4689d017e07cfa18442e10da051c0f3f9dd2e7f4dc7cdb55a11f1303c952',
+        'amd64'  : '5d2c51caca950333aba84911df7d377f826f3a59ec36061c6539105084f65c92',
+        '386'    : 'f572eccdbb35ab5c7fef7703a5b6ca49e55d039e441920ba5478972ecdcf7a47',
+]
+def abiToPlatform = ['arm64-v8a': 'arm64', 'armeabi-v7a': 'arm7', 'x86_64': 'amd64', 'x86': '386']
+
+def cacheDir = new File(buildscript.sourceFile.parentFile, "build/natsserver")
+ext.natsServerJniDir = new File(cacheDir, "jniLibs")
+
+static String sha256(File f) {
+    MessageDigest md = MessageDigest.getInstance('SHA-256')
+    f.withInputStream { is ->
+        byte[] buf = new byte[65536]
+        int n
+        while ((n = is.read(buf)) > 0) md.update(buf, 0, n)
+    }
+    return md.digest().collect { String.format('%02x', it) }.join('')
+}
+
+task fetchNatsServer {
+    description = "Download + verify nats-server ${natsServerVersion} and stage it as jniLibs/<abi>/libnatsserver.so"
+    outputs.dir natsServerJniDir
+    doLast {
+        abiToPlatform.each { abi, platform ->
+            File so = new File(natsServerJniDir, "${abi}/libnatsserver.so")
+            File stamp = new File(natsServerJniDir, "${abi}/.${natsServerVersion}")
+            if (so.exists() && stamp.exists()) return
+            String name = "nats-server-${natsServerVersion}-linux-${platform}"
+            File tgz = new File(cacheDir, "${name}.tar.gz")
+            if (!tgz.exists() || sha256(tgz) != natsServerChecksums[platform]) {
+                tgz.parentFile.mkdirs()
+                String url = "https://github.com/nats-io/nats-server/releases/download/${natsServerVersion}/${name}.tar.gz"
+                logger.lifecycle("print-nats: downloading ${url}")
+                new URL(url).withInputStream { i -> tgz.withOutputStream { o -> o << i } }
+            }
+            String actual = sha256(tgz)
+            if (actual != natsServerChecksums[platform]) {
+                tgz.delete()
+                throw new GradleException("nats-server ${platform}: SHA256 mismatch (${actual}) — refusing to bundle it")
+            }
+            File out = new File(natsServerJniDir, abi)
+            out.mkdirs()
+            project.copy {
+                from(project.tarTree(project.resources.gzip(tgz))) { include "${name}/nats-server" }
+                into out
+                eachFile { it.path = 'libnatsserver.so' }
+                includeEmptyDirs = false
+            }
+            so.setExecutable(true, false)
+            stamp.text = natsServerVersion
+        }
+    }
+}

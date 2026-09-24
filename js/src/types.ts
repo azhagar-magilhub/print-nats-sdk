@@ -29,6 +29,29 @@ export interface NatsSettings {
   consumerName?: string;
   isMaster?: boolean;
   testMode?: boolean;
+  /**
+   * LAN mode: `serverUrls` is the master's local server (`nats://<master-ip>:4222`, or `nats://127.0.0.1:4222` on the
+   * master) and `authToken` its `lanToken()`. Device-to-device traffic then never needs the internet.
+   */
+  lanMode?: boolean;
+  /** LAN mode, master only: cloud URL(s) for backend KOTs + forwarding print status. Omit on clients. */
+  cloudServerUrls?: string;
+  cloudAuthToken?: string;
+  /** LAN mode, master only: run the bundled nats-server (needs `printNatsLocalServer=true` in gradle.properties). */
+  serveLocal?: boolean;
+  localPort?: number;
+}
+
+export interface LanStatus {
+  /** Connected to the (local) server. */
+  connected: boolean;
+  /** This device is configured to run the local server. */
+  serving: boolean;
+  serverRunning: boolean;
+  /** Master: has a cloud connection configured / is it up. */
+  cloudLink: boolean;
+  cloudConnected: boolean;
+  serverUrl: string | null;
 }
 
 export interface Session {
@@ -311,6 +334,15 @@ export interface PrintNatsApi {
   listConsumers(stream: string): Promise<ConsumerSummary[]>;
   /** Resolves also when it didn't exist. */
   deleteConsumer(stream: string, durable: string): Promise<void>;
+
+  // ---- LAN mode (Android) ----
+  /** Shop-local auth token (same on master and clients, derived offline). */
+  lanToken(secret: string, locationId: string): Promise<string>;
+  /** `host:port` of this location's master server found on the shop network (NSD), or null. */
+  findMaster(locationId: string, timeoutMs?: number): Promise<string | null>;
+  /** This device's IPv4 address on the shop network, or null. */
+  localIp(): Promise<string | null>;
+  lanStatus(): Promise<LanStatus>;
 
   /**
    * Test print on one printer — the same renderer/transport as real KOTs (Star printers get Star commands, not
