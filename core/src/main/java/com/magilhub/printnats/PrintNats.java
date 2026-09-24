@@ -658,6 +658,59 @@ public final class PrintNats {
         return nats != null && nats.isConnected();
     }
 
+    // ---- acknowledged app sync (host JetStream streams + durable consumers) ------------------------------
+
+    private NatsClient requireNats() {
+        if (nats == null) throw new IllegalStateException("NATS not configured");
+        return nats;
+    }
+
+    /** Idempotent create / update (File storage, 2-min Nats-Msg-Id dedup window); re-applied on every connect. */
+    public void ensureStream(String name, List<String> subjects, long maxAgeMs) throws Exception {
+        requireNats().ensureStream(name, subjects, maxAgeMs);
+    }
+
+    /** JetStream publish with Nats-Msg-Id; the PubAck stream sequence. Throws when not connected (no buffering). */
+    public long publishDurable(String subject, byte[] data, String msgId) throws Exception {
+        return requireNats().publishDurable(subject, data, msgId);
+    }
+
+    /** Push durable consumer, explicit ack; kept across reconnects; idempotent. See {@link NatsClient#startDurable}. */
+    public void startDurable(String stream, String durable, String filterSubject,
+                             com.magilhub.printnats.nats.DurableHandler handler) throws Exception {
+        requireNats().startDurable(stream, durable, filterSubject, handler);
+    }
+
+    public void stopDurable(String durable) {
+        if (nats != null) nats.stopDurable(durable);
+    }
+
+    /** False for an unknown / stale token (JetStream redelivers after ackWait). */
+    public boolean ackDurable(String token) {
+        return nats != null && nats.ackDurable(token);
+    }
+
+    public boolean nakDurable(String token, long delayMs) {
+        return nats != null && nats.nakDurable(token, delayMs);
+    }
+
+    public boolean termDurable(String token) {
+        return nats != null && nats.termDurable(token);
+    }
+
+    /** null when the consumer doesn't exist. */
+    public com.magilhub.printnats.nats.ConsumerStats consumerInfo(String stream, String durable) throws Exception {
+        return requireNats().consumerInfo(stream, durable);
+    }
+
+    public List<com.magilhub.printnats.nats.ConsumerStats> listConsumers(String stream) throws Exception {
+        return requireNats().listConsumers(stream);
+    }
+
+    public boolean deleteConsumer(String stream, String durable) throws Exception {
+        return requireNats().deleteConsumer(stream, durable);
+    }
+
     // ---- builder --------------------------------------------------------------------------------------
 
     public static final class Builder {

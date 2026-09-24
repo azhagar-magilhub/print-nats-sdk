@@ -25,6 +25,13 @@ public final class NatsConfig {
     public long ackWaitMs = 5 * 60_000;
     public int pendingPublishCap = 200;
 
+    // ---- host durable consumers (NatsClient#startDurable) ----
+    /** Redelivery delay for an unacked durable message. */
+    public long durableAckWaitMs = 30_000;
+    public int durableMaxAckPending = 200;
+    /** JetStream Nats-Msg-Id dedup window for streams made by NatsClient#ensureStream. */
+    public long durableDuplicateWindowMs = 2 * 60_000;
+
     public String statusStreamName = "PRINTEVENTSTATUS";
     public long statusStreamMaxAgeMs = 2L * 24 * 60 * 60 * 1000;
 

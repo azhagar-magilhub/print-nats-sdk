@@ -96,6 +96,13 @@ public final class NatsClient {
         }
     }
 
+    /** Connection-event sink for helpers (e.g. {@link DurableConsumers}); details are redacted. */
+    interface EventSink {
+        void emit(String type, String detail);
+    }
+
+    private final DurableConsumers durables;
+
     public NatsClient(NatsConfig config, NatsEvents events, LogSink log) {
         this(config, events, log, null);
     }
@@ -107,6 +114,12 @@ public final class NatsClient {
         this.log = log == null ? LogSink.NONE : log;
         this.isMaster = config.isMaster;
         this.outbox = outbox != null ? outbox : new InMemoryOutbox();
+        this.durables = new DurableConsumers(config, new EventSink() {
+            @Override
+            public void emit(String type, String detail) {
+                emitConnectionEvent(type, detail);
+            }
+        });
     }
 
     public synchronized void start() {
@@ -322,6 +335,70 @@ public final class NatsClient {
         applyRelaySubscription();
     }
 
+    // ---- host streams + durable consumers (acknowledged app sync) -----------------------------------------
+
+    /**
+     * Create the stream, or update its subjects / max age if they differ (File storage, Limits retention,
+     * Nats-Msg-Id duplicate window {@link NatsConfig#durableDuplicateWindowMs}). Remembered and re-applied on every
+     * connect. Throws {@link IllegalStateException} when not connected (it is still applied on the next connect).
+     */
+    public void ensureStream(String name, java.util.List<String> subjects, long maxAgeMs) throws Exception {
+        durables.ensureStream(name, subjects, maxAgeMs);
+    }
+
+    /**
+     * JetStream publish with a {@code Nats-Msg-Id} header (a repeat within the duplicate window is stored once).
+     * Returns the stream sequence from the PubAck (the original one for a duplicate). No buffering: throws when not
+     * connected or no PubAck arrived — the caller keeps its own outbox.
+     */
+    public long publishDurable(String subject, byte[] data, String msgId) throws Exception {
+        return durables.publish(subject, data, msgId);
+    }
+
+    /**
+     * Push durable consumer on {@code stream} ({@code AckPolicy.Explicit}, ackWait {@link NatsConfig#durableAckWaitMs},
+     * maxAckPending {@link NatsConfig#durableMaxAckPending}, {@code DeliverPolicy.All} when first created). Kept across
+     * reconnects; idempotent (same stream + filter only replaces the handler). While disconnected it is registered and
+     * bound on the next connect. Throws when binding now fails (still retried on the next connect).
+     */
+    public void startDurable(String stream, String durable, String filterSubject, DurableHandler handler) throws Exception {
+        durables.startDurable(stream, durable, filterSubject, handler);
+    }
+
+    /** Stop receiving; the consumer (and its ack floor) stays on the server. */
+    public void stopDurable(String durable) {
+        durables.stopDurable(durable);
+    }
+
+    /** @return false for an unknown / stale token (no-op; JetStream redelivers after ackWait) */
+    public boolean ackDurable(String token) {
+        return durables.settle(token, DurableConsumers.ACK, 0);
+    }
+
+    /** Negative ack: redeliver after {@code delayMs} (0 = now). False for an unknown / stale token. */
+    public boolean nakDurable(String token, long delayMs) {
+        return durables.settle(token, DurableConsumers.NAK, delayMs);
+    }
+
+    /** Never redeliver this message (poison). False for an unknown / stale token. */
+    public boolean termDurable(String token) {
+        return durables.settle(token, DurableConsumers.TERM, 0);
+    }
+
+    /** null when the stream or consumer doesn't exist; throws when not connected. */
+    public ConsumerStats consumerInfo(String stream, String durable) throws Exception {
+        return durables.consumerInfo(stream, durable);
+    }
+
+    public java.util.List<ConsumerStats> listConsumers(String stream) throws Exception {
+        return durables.listConsumers(stream);
+    }
+
+    /** Delete a consumer (and stop it locally). False when it didn't exist. */
+    public boolean deleteConsumer(String stream, String durable) throws Exception {
+        return durables.deleteConsumer(stream, durable);
+    }
+
     // ---- publishing --------------------------------------------------------------------------------
 
     /**
@@ -447,6 +524,14 @@ public final class NatsClient {
                             if (type == ConnectionListener.Events.RECONNECTED || type == ConnectionListener.Events.RESUBSCRIBED) {
                                 flushAsync();
                                 if (conn != null) flushPendingCore(conn); // dispatcher subscriptions survive a reconnect
+                                if (type == ConnectionListener.Events.RECONNECTED) {
+                                    daemon("print-nats-durables", new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            durables.onReconnected();
+                                        }
+                                    });
+                                }
                             }
                         })
                         .errorListener(new ErrorListener() {
@@ -473,6 +558,8 @@ public final class NatsClient {
 
                 JetStream js = nc.jetStream();
                 jetStream = js;
+                // Host streams + durables before the print consumer bind, which may throw and restart the loop.
+                durables.onConnected(nc);
                 // Stream first: a JetStream publish to a subject with no stream is delivered but never acked,
                 // so flushing first would keep (and later re-send) the event. (Legacy had the same order.)
                 ensureStatusStream(nc);
@@ -700,6 +787,7 @@ public final class NatsClient {
 
     private void closeConnection() {
         jetStream = null;
+        durables.onClosed();
         appDispatcher = null; // closed with the connection; recreated (with every app subject) on the next connect
         synchronized (relayLock) {
             relayDispatcher = null;
