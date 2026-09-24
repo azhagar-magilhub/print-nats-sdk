@@ -7,6 +7,8 @@ import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.bridge.ReadableArray;
+import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 import com.google.gson.Gson;
@@ -36,6 +38,7 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     static final String EVENT_PRINTER_ADDRESS = "PrintNatsPrinterAddressEvent";
     static final String EVENT_APP_MESSAGE = "PrintNatsAppMessage";
     static final String EVENT_RELAY_ORDER = "PrintNatsRelayOrder";
+    static final String EVENT_DURABLE = "PrintNatsDurableMessage";
     /** How long a relayed order waits for JS (e.g. KOT number assignment) before printing the original. */
     static final long RELAY_ORDER_TIMEOUT_MS = 3000;
 
@@ -50,6 +53,40 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     /** JS registered onRelayOrder — without a handler the hook doesn't wait. */
     private volatile boolean relayOrderHandlerActive;
     private static final Gson GSON = new Gson();
+
+    /** JS registered onDurableMessage — without a listener durable messages are left unacked (redelivered later). */
+    private volatile boolean durableHandlerActive;
+    /** Network calls (JetStream API / PubAck waits) off the bridge thread. */
+    private static final java.util.concurrent.ExecutorService IO = java.util.concurrent.Executors.newCachedThreadPool(
+            new java.util.concurrent.ThreadFactory() {
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "print-nats-durable");
+                    t.setDaemon(true);
+                    return t;
+                }
+            });
+
+    /** Hands durable messages to JS as PrintNatsDurableMessage; declines (no ack → redelivery) when JS isn't there. */
+    private final com.magilhub.printnats.nats.DurableHandler durableHandler = new com.magilhub.printnats.nats.DurableHandler() {
+        @Override
+        public boolean onMessage(com.magilhub.printnats.nats.DurableMessage msg) {
+            if (!durableHandlerActive || !context.hasActiveCatalystInstance()) return false;
+            WritableMap m = Arguments.createMap();
+            m.putString("token", msg.token);
+            m.putString("durable", msg.durable);
+            m.putString("subject", msg.subject);
+            m.putString("data", new String(msg.data, StandardCharsets.UTF_8));
+            m.putDouble("streamSeq", msg.streamSeq);
+            m.putDouble("deliveredCount", msg.deliveredCount);
+            try {
+                context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(EVENT_DURABLE, m);
+                return true;
+            } catch (Throwable t) {
+                return false;
+            }
+        }
+    };
 
     private final ReactApplicationContext context;
 
@@ -474,6 +511,137 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void cancelAllForPrinter(String printerId, String staffName, Promise promise) {
         promise.resolve(sdk().cancelAllForPrinter(printerId, staffName));
+    }
+
+    // ---- acknowledged app sync (JetStream stream + durable consumers) -------------------------------
+
+    private interface Io {
+        Object run() throws Exception;
+    }
+
+    private static void io(final String code, final Promise promise, final Io work) {
+        IO.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    promise.resolve(work.run());
+                } catch (Throwable t) {
+                    promise.reject(code, t.getMessage() != null ? t.getMessage() : String.valueOf(t), t);
+                }
+            }
+        });
+    }
+
+    /** Idempotent add-or-update (File storage, 2-min dedup window). Rejects when not connected. */
+    @ReactMethod
+    public void ensureStream(final String name, final ReadableArray subjects, final double maxAgeMs, final Promise promise) {
+        io("E_STREAM", promise, new Io() {
+            @Override
+            public Object run() throws Exception {
+                List<String> list = new java.util.ArrayList<>();
+                for (int i = 0; i < subjects.size(); i++) list.add(subjects.getString(i));
+                PrintNatsAndroid.ensureStream(context, name, list, (long) maxAgeMs);
+                return null;
+            }
+        });
+    }
+
+    /** JetStream publish with Nats-Msg-Id; resolves the stream seq; rejects when not connected / no PubAck. */
+    @ReactMethod
+    public void publishDurable(final String subject, final String data, final String msgId, final Promise promise) {
+        io("E_PUBLISH_DURABLE", promise, new Io() {
+            @Override
+            public Object run() throws Exception {
+                return (double) sdk().publishDurable(subject, data.getBytes(StandardCharsets.UTF_8), msgId);
+            }
+        });
+    }
+
+    /** Push durable consumer; kept across reconnects and SDK rebuilds; idempotent. */
+    @ReactMethod
+    public void startDurable(final String stream, final String durable, final String filterSubject, final Promise promise) {
+        io("E_DURABLE", promise, new Io() {
+            @Override
+            public Object run() throws Exception {
+                PrintNatsAndroid.startDurable(context, stream, durable, filterSubject, durableHandler);
+                return null;
+            }
+        });
+    }
+
+    @ReactMethod
+    public void stopDurable(String durable, Promise promise) {
+        PrintNatsAndroid.stopDurable(context, durable);
+        promise.resolve(null);
+    }
+
+    /** JS onDurableMessage registered (true) / removed (false). */
+    @ReactMethod
+    public void setDurableHandlerActive(boolean active) {
+        durableHandlerActive = active;
+    }
+
+    /** Stale / unknown tokens resolve too (the message is redelivered after ackWait). */
+    @ReactMethod
+    public void ackDurable(String token, Promise promise) {
+        PrintNats s = PrintNatsAndroid.get(context);
+        if (s != null) s.ackDurable(token);
+        promise.resolve(null);
+    }
+
+    @ReactMethod
+    public void nakDurable(String token, double delayMs, Promise promise) {
+        PrintNats s = PrintNatsAndroid.get(context);
+        if (s != null) s.nakDurable(token, (long) Math.max(0, delayMs));
+        promise.resolve(null);
+    }
+
+    /** {numPending, numAckPending, ackFloorStreamSeq, delivered} or null when the consumer doesn't exist. */
+    @ReactMethod
+    public void consumerInfo(final String stream, final String durable, final Promise promise) {
+        io("E_CONSUMER_INFO", promise, new Io() {
+            @Override
+            public Object run() throws Exception {
+                com.magilhub.printnats.nats.ConsumerStats c = sdk().consumerInfo(stream, durable);
+                if (c == null) return null;
+                WritableMap m = Arguments.createMap();
+                m.putDouble("numPending", c.numPending);
+                m.putDouble("numAckPending", c.numAckPending);
+                m.putDouble("ackFloorStreamSeq", c.ackFloorStreamSeq);
+                m.putDouble("delivered", c.delivered);
+                return m;
+            }
+        });
+    }
+
+    @ReactMethod
+    public void listConsumers(final String stream, final Promise promise) {
+        io("E_LIST_CONSUMERS", promise, new Io() {
+            @Override
+            public Object run() throws Exception {
+                WritableArray a = Arguments.createArray();
+                for (com.magilhub.printnats.nats.ConsumerStats c : sdk().listConsumers(stream)) {
+                    WritableMap m = Arguments.createMap();
+                    m.putString("durable", c.durable);
+                    m.putDouble("numPending", c.numPending);
+                    m.putDouble("numAckPending", c.numAckPending);
+                    a.pushMap(m);
+                }
+                return a;
+            }
+        });
+    }
+
+    /** Resolves also when it didn't exist. */
+    @ReactMethod
+    public void deleteConsumer(final String stream, final String durable, final Promise promise) {
+        io("E_DELETE_CONSUMER", promise, new Io() {
+            @Override
+            public Object run() throws Exception {
+                PrintNatsAndroid.deleteConsumer(context, stream, durable);
+                return null;
+            }
+        });
     }
 
     // Required by NativeEventEmitter on RN >= 0.65.

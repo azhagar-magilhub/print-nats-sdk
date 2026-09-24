@@ -63,6 +63,10 @@ function listen<T>(type: string, cb: (e: T) => void): Unsubscribe {
   };
 }
 
+function notSupported(name: string): Promise<never> {
+  return Promise.reject(new Error(`@merchant/print-nats: ${name} is not supported on desktop`));
+}
+
 export const PrintNats: PrintNatsApi = {
   configure: async (config: PrintNatsConfig) => {
     await call('configure', config);
@@ -127,6 +131,17 @@ export const PrintNats: PrintNatsApi = {
   },
   onAppMessage: (cb: (m: AppMessage) => void) => listen('app-message', cb),
   testPrint: (printer: PrinterConfig) => call<{ ok: boolean; message?: string | null }>('printers/test', printer),
+  // Acknowledged durable sync: Android only for now (desktop sidecar has no JetStream endpoints yet).
+  ensureStream: () => notSupported('ensureStream'),
+  publishDurable: () => notSupported('publishDurable'),
+  startDurable: () => notSupported('startDurable'),
+  stopDurable: () => notSupported('stopDurable'),
+  onDurableMessage: () => () => undefined,
+  ackDurable: () => notSupported('ackDurable'),
+  nakDurable: () => notSupported('nakDurable'),
+  consumerInfo: () => notSupported('consumerInfo'),
+  listConsumers: () => notSupported('listConsumers'),
+  deleteConsumer: () => notSupported('deleteConsumer'),
   submitMessage: (messageType: string, messageData: string, messageId: string) =>
     call<boolean>('messages/submit', { messageType, messageData, messageId }),
 };

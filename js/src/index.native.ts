@@ -1,7 +1,7 @@
 // React Native (Android): bridge to com.magilhub.printnats.rn.PrintNatsModule.
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import {
-  AppMessage, ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig,
+  AppMessage, ConnectionEvent, DurableMessage, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig,
   RelayOrderHandler, Session, StatusEvent, Unsubscribe,
 } from './types';
 
@@ -21,6 +21,9 @@ function listen<T>(name: string, map: (raw: any) => T, cb: (e: T) => void): Unsu
   const sub = emitter.addListener(name, (raw: any) => cb(map(raw)));
   return () => sub.remove();
 }
+
+/** onDurableMessage listeners; native hands messages to JS only while > 0 (else they stay unacked). */
+let durableListeners = 0;
 
 export const PrintNats: PrintNatsApi = {
   async configure(config: PrintNatsConfig) {
@@ -119,6 +122,51 @@ export const PrintNats: PrintNatsApi = {
   },
   onAppMessage: (cb: (m: AppMessage) => void) =>
     listen('PrintNatsAppMessage', (raw) => ({ subject: raw.subject, data: raw.data }), cb),
+
+  async ensureStream(name, subjects, maxAgeMs) {
+    await requireNative().ensureStream(name, subjects, maxAgeMs);
+  },
+  publishDurable: (subject, data, msgId) => requireNative().publishDurable(subject, data, msgId),
+  async startDurable({ stream, durable, filterSubject }) {
+    await requireNative().startDurable(stream, durable, filterSubject);
+  },
+  async stopDurable(durable) {
+    await requireNative().stopDurable(durable);
+  },
+  onDurableMessage(cb: (m: DurableMessage) => void): Unsubscribe {
+    if (!emitter || !Native) return () => undefined;
+    const sub = emitter.addListener('PrintNatsDurableMessage', (raw: any) =>
+      cb({
+        token: raw.token,
+        durable: raw.durable,
+        subject: raw.subject,
+        data: raw.data,
+        streamSeq: raw.streamSeq,
+        deliveredCount: raw.deliveredCount,
+      }),
+    );
+    durableListeners += 1;
+    Native.setDurableHandlerActive?.(true);
+    let removed = false;
+    return () => {
+      if (removed) return;
+      removed = true;
+      sub.remove();
+      durableListeners -= 1;
+      if (durableListeners === 0) Native.setDurableHandlerActive?.(false);
+    };
+  },
+  async ackDurable(token) {
+    await requireNative().ackDurable(token);
+  },
+  async nakDurable(token, delayMs = 0) {
+    await requireNative().nakDurable(token, delayMs);
+  },
+  consumerInfo: (stream, durable) => requireNative().consumerInfo(stream, durable),
+  listConsumers: (stream) => requireNative().listConsumers(stream),
+  async deleteConsumer(stream, durable) {
+    await requireNative().deleteConsumer(stream, durable);
+  },
   submitMessage: (messageType, messageData, messageId) =>
     requireNative().submitMessage(messageType, messageData, messageId),
   async getIpOverrides(): Promise<IpOverrides> {

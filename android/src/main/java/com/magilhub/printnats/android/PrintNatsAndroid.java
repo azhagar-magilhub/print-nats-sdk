@@ -42,6 +42,89 @@ public final class PrintNatsAndroid {
         if (s != null) s.unsubscribeApp(subject);
     }
 
+    /** Host durables (acknowledged app sync) — re-registered on every rebuilt instance, like appSubjects. */
+    private static final class DurableSpec {
+        final String stream;
+        final String filterSubject;
+        final com.magilhub.printnats.nats.DurableHandler handler;
+
+        DurableSpec(String stream, String filterSubject, com.magilhub.printnats.nats.DurableHandler handler) {
+            this.stream = stream;
+            this.filterSubject = filterSubject;
+            this.handler = handler;
+        }
+    }
+
+    private static final java.util.Map<String, DurableSpec> durables = new java.util.LinkedHashMap<>();
+    /** name → {subjects, maxAgeMs}: host streams re-ensured on every rebuilt instance. */
+    private static final java.util.Map<String, Object[]> streams = new java.util.LinkedHashMap<>();
+
+    /** See {@link PrintNats#ensureStream}; remembered for rebuilt instances. Throws when not connected. */
+    public static void ensureStream(Context context, String name, java.util.List<String> subjects, long maxAgeMs) throws Exception {
+        PrintNats s;
+        synchronized (PrintNatsAndroid.class) {
+            streams.put(name, new Object[]{new java.util.ArrayList<>(subjects), maxAgeMs});
+            s = get(context);
+        }
+        if (s == null) throw new IllegalStateException("PrintNats not configured");
+        s.ensureStream(name, subjects, maxAgeMs); // network: outside the class lock
+    }
+
+    /** See {@link PrintNats#startDurable}; kept across SDK rebuilds (configure / restart). */
+    public static void startDurable(Context context, String stream, String durable, String filterSubject,
+                                    com.magilhub.printnats.nats.DurableHandler handler) throws Exception {
+        PrintNats s;
+        synchronized (PrintNatsAndroid.class) {
+            durables.put(durable, new DurableSpec(stream, filterSubject, handler));
+            s = get(context);
+        }
+        if (s == null) throw new IllegalStateException("PrintNats not configured");
+        s.startDurable(stream, durable, filterSubject, handler);
+    }
+
+    public static void stopDurable(Context context, String durable) {
+        PrintNats s;
+        synchronized (PrintNatsAndroid.class) {
+            durables.remove(durable);
+            s = instance;
+        }
+        if (s != null) s.stopDurable(durable);
+    }
+
+    /** Delete on the server and forget it locally (so a rebuild doesn't re-create it). False when it didn't exist. */
+    public static boolean deleteConsumer(Context context, String stream, String durable) throws Exception {
+        PrintNats s;
+        synchronized (PrintNatsAndroid.class) {
+            DurableSpec d = durables.get(durable);
+            if (d != null && d.stream.equals(stream)) durables.remove(durable);
+            s = get(context);
+        }
+        if (s == null) throw new IllegalStateException("PrintNats not configured");
+        return s.deleteConsumer(stream, durable);
+    }
+
+    /** New instance, not started yet (not connected): only registers — bound / applied on its first connect. */
+    private static void applyHostState(PrintNats s) {
+        for (String subject : appSubjects) s.subscribeApp(subject);
+        for (java.util.Map.Entry<String, Object[]> e : streams.entrySet()) {
+            try {
+                @SuppressWarnings("unchecked")
+                java.util.List<String> subjects = (java.util.List<String>) e.getValue()[0];
+                s.ensureStream(e.getKey(), subjects, (Long) e.getValue()[1]);
+            } catch (Exception notConnectedYet) {
+                // remembered by the client; applied on connect
+            }
+        }
+        for (java.util.Map.Entry<String, DurableSpec> e : durables.entrySet()) {
+            try {
+                DurableSpec d = e.getValue();
+                s.startDurable(d.stream, e.getKey(), d.filterSubject, d.handler);
+            } catch (Exception ignored) {
+                // registered; bound on connect
+            }
+        }
+    }
+
     private PrintNatsAndroid() {
     }
 
@@ -66,7 +149,7 @@ public final class PrintNatsAndroid {
         prefs(context).edit().putString(KEY_CONFIG, config.toJson()).apply();
         if (instance != null) instance.stop();
         instance = build(context, config);
-        for (String subject : appSubjects) instance.subscribeApp(subject);
+        applyHostState(instance);
         instance.start();
         return instance;
     }
@@ -77,7 +160,7 @@ public final class PrintNatsAndroid {
             PrintNatsConfig c = savedConfig(context);
             if (c == null) return null;
             instance = build(context, c);
-            for (String subject : appSubjects) instance.subscribeApp(subject);
+            applyHostState(instance);
             instance.start();
         }
         return instance;

@@ -171,6 +171,42 @@ export interface AppMessage {
 
 export type Unsubscribe = () => void;
 
+/** A message from a durable consumer (startDurable). Settle it with ackDurable / nakDurable using `token`. */
+export interface DurableMessage {
+  /** Valid for the NATS connection that delivered it; acking a stale token resolves (redelivery covers it). */
+  token: string;
+  durable: string;
+  subject: string;
+  data: string;
+  streamSeq: number;
+  /** 1 on first delivery, 2+ on redelivery. */
+  deliveredCount: number;
+}
+
+export interface DurableOptions {
+  stream: string;
+  /** Consumer name: no '.', '*', '>' or spaces. */
+  durable: string;
+  filterSubject: string;
+}
+
+export interface ConsumerInfo {
+  /** Stream messages matching the filter not yet delivered to this consumer. */
+  numPending: number;
+  /** Delivered, not yet acked. */
+  numAckPending: number;
+  /** Everything at or below this stream sequence is acked (the bookmark). */
+  ackFloorStreamSeq: number;
+  /** Stream sequence of the last delivered message. */
+  delivered: number;
+}
+
+export interface ConsumerSummary {
+  durable: string;
+  numPending: number;
+  numAckPending: number;
+}
+
 /** The one API both apps use — implemented by index.native.ts (RN bridge) and index.ts (desktop sidecar). */
 export interface PrintNatsApi {
   configure(config: PrintNatsConfig): Promise<void>;
@@ -244,6 +280,34 @@ export interface PrintNatsApi {
   subscribe(subject: string): Promise<void>;
   unsubscribe(subject: string): Promise<void>;
   onAppMessage(cb: (m: AppMessage) => void): Unsubscribe;
+
+  /*
+   * Acknowledged, durable app sync (JetStream). Android only; desktop rejects with "not supported".
+   */
+  /** Idempotent add-or-update: File storage, Nats-Msg-Id dedup window 2 min. Rejects when not connected. */
+  ensureStream(name: string, subjects: string[], maxAgeMs: number): Promise<void>;
+  /**
+   * JetStream publish with a Nats-Msg-Id header (a repeat within 2 min is stored once); resolves the stream seq.
+   * Rejects when not connected / no PubAck — no SDK-side buffering, keep your own outbox.
+   */
+  publishDurable(subject: string, data: string, msgId: string): Promise<number>;
+  /**
+   * Push durable consumer: AckPolicy.Explicit, ackWait 30 s, maxAckPending 200, DeliverPolicy.All when first created.
+   * Re-established after every reconnect (and SDK rebuild); idempotent. While disconnected it is registered and
+   * bound on connect. Messages arrive via onDurableMessage; with no listener they stay unacked and are redelivered.
+   */
+  startDurable(opts: DurableOptions): Promise<void>;
+  /** Stop receiving; the consumer and its ack floor stay on the server. */
+  stopDurable(durable: string): Promise<void>;
+  onDurableMessage(cb: (m: DurableMessage) => void): Unsubscribe;
+  ackDurable(token: string): Promise<void>;
+  /** Redeliver after delayMs (default: now). */
+  nakDurable(token: string, delayMs?: number): Promise<void>;
+  /** null when the consumer (or stream) doesn't exist. */
+  consumerInfo(stream: string, durable: string): Promise<ConsumerInfo | null>;
+  listConsumers(stream: string): Promise<ConsumerSummary[]>;
+  /** Resolves also when it didn't exist. */
+  deleteConsumer(stream: string, durable: string): Promise<void>;
 
   /**
    * Test print on one printer — the same renderer/transport as real KOTs (Star printers get Star commands, not
