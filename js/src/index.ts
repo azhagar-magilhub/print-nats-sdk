@@ -39,7 +39,10 @@ let source: EventSource | null = null;
 // side). EventSource can't set headers, so the token goes in the query string (127.0.0.1 only).
 function ensureStream() {
   if (source) return;
-  const { port, token } = sidecar();
+  // No sidecar (plain browser, no desktop shell): listeners stay registered but never fire; calls reject.
+  const info = (globalThis as any).__PRINT_NATS__ as SidecarInfo | undefined;
+  if (!info || typeof EventSource === 'undefined') return;
+  const { port, token } = info;
   source = new EventSource(`http://127.0.0.1:${port}/v1/events?token=${encodeURIComponent(token)}`);
   source.onmessage = (m: MessageEvent) => {
     const msg = JSON.parse(String(m.data));
