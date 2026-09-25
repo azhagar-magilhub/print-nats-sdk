@@ -364,7 +364,9 @@ public final class PrintNats {
                     o.addProperty("port", port);
                     pipeline.onConnectionEvent("lan_master", o.toString());
                 });
-        beacon.announce(c.serveLocal, c.lanEpoch, c.localPort);
+        // A master that got no epoch from its host still announces — with the lowest one, so any explicit choice
+        // (a newer lease) outranks it, but clients can always find a master.
+        beacon.announce(c.serveLocal, c.lanEpoch > 0 ? c.lanEpoch : 1, c.localPort);
         beacon.start();
     }
 
