@@ -90,9 +90,8 @@ public final class PrintNats {
         this.printers.addAll(b.printers);
         LogSink log = b.log;
         this.logSink = log;
-        // LAN mode: the master is the device running the local server (the UDP lease decided it) — the device rows'
-        // isDefault can be stale with no internet, and two print masters means a client prints its own KOTs.
-        if (b.natsConfig != null && b.natsConfig.lanMode) b.natsConfig.isMaster = b.natsConfig.serveLocal;
+        // LAN mode: a device running the local server is the master (the UDP lease decided it).
+        if (b.natsConfig != null && b.natsConfig.lanMode && b.natsConfig.serveLocal) b.natsConfig.isMaster = true;
         this.masterRole = b.natsConfig != null && b.natsConfig.isMaster;
         final List<PrinterConfig> printerList = this.printers;
         PrintQueue.PrinterLookup lookup = new PrintQueue.PrinterLookup() {
@@ -430,10 +429,13 @@ public final class PrintNats {
         return masterRole;
     }
 
-    /** In LAN mode the role is fixed by the lease (serveLocal); otherwise {@code fallback} (device rows / host). */
+    /**
+     * In LAN mode the configured role (the host's UDP-lease decision) wins — the device rows' isDefault can be stale
+     * with no internet, and a second print master means a client prints its own KOTs. Otherwise {@code fallback}.
+     */
     private boolean lanRole(boolean fallback) {
         NatsConfig c = nats != null ? nats.config() : null;
-        return c != null && c.lanMode ? c.serveLocal : fallback;
+        return c != null && c.lanMode ? (c.serveLocal || c.isMaster) : fallback;
     }
 
     /**
