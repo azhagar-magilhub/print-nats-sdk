@@ -424,6 +424,7 @@ public final class PrintNats {
      * device, retrying until the master takes it. Returns the tickets queued (1 for a relay job).
      */
     public int printKot(JsonObject orderDetails, String tableName, boolean isOrderCancelled) {
+        orderDetails = asHostKot(orderDetails);
         if (relayToMaster && !masterRole) {
             return enqueueRelay(com.magilhub.printnats.pipeline.PrintRelay.KOT, orderDetails, tableName, isOrderCancelled);
         }
@@ -431,10 +432,23 @@ public final class PrintNats {
     }
 
     public int printEditKot(JsonObject orderDetails) {
+        orderDetails = asHostKot(orderDetails);
         if (relayToMaster && !masterRole) {
             return enqueueRelay(com.magilhub.printnats.pipeline.PrintRelay.EDIT_KOT, orderDetails, null, false);
         }
         return pipeline.printEditKot(orderDetails);
+    }
+
+    /**
+     * A KOT the host UI sends is a new / edited / cancelled ticket, never a reprint: without {@code isAutoPrint} the
+     * renderers read false and print "REPRINTED" on every ticket (seen on desktop, where nothing upstream set it).
+     * Reprints arrive as REPRINT_STATION_KOT, which sets the flag explicitly (MessageRules). Copies the order.
+     */
+    static JsonObject asHostKot(JsonObject order) {
+        if (order == null || order.has("isAutoPrint")) return order;
+        JsonObject copy = order.deepCopy();
+        copy.addProperty("isAutoPrint", true);
+        return copy;
     }
 
     private int enqueueRelay(String kind, JsonObject order, String tableName, boolean cancelled) {
