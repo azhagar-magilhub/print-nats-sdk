@@ -40,9 +40,12 @@ public final class DesktopLanServer {
     }
 
     /** Start the server when {@code nats.serveLocal}, stop it otherwise. Idempotent. */
-    public static synchronized void sync(File dataDir, NatsConfig nats, LogSink log) {
+    public static synchronized void sync(File dataDir, NatsConfig nats, String sessionLocationId, LogSink log) {
         boolean want = nats != null && nats.serveLocal;
-        String key = want ? nats.localPort + "|" + nats.authToken + "|" + nats.locationId : null;
+        // The app's NATS settings don't always carry the location (the SDK fills it from the session later) — the
+        // mDNS name must be maghil-<locationId> or tablets never find this master ("maghil-null").
+        final String locationId = nats != null && nats.locationId != null ? nats.locationId : sessionLocationId;
+        String key = want ? nats.localPort + "|" + nats.authToken + "|" + locationId : null;
         if (want && key.equals(serverKey) && server != null) return;
         stop();
         if (!want) return;
@@ -59,8 +62,8 @@ public final class DesktopLanServer {
         server = new LocalNatsServer(bin, dir, nats.localPort, nats.authToken, log);
         serverKey = key;
         server.start();
-        log.append(LOG, "Local NATS server for " + nats.locationId + " using " + bin);
-        advertise(nats.locationId, nats.localPort, log);
+        log.append(LOG, "Local NATS server for " + locationId + " using " + bin);
+        advertise(locationId, nats.localPort, log);
     }
 
     public static synchronized void stop() {

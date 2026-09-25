@@ -45,7 +45,7 @@ public final class DesktopHost {
     /** Start from the saved config (if any). */
     public synchronized void startSaved() {
         if (config != null && instance == null) {
-            com.magilhub.printnats.desktop.lan.DesktopLanServer.sync(dataDir, config.nats, log);
+            com.magilhub.printnats.desktop.lan.DesktopLanServer.sync(dataDir, config.nats, sessionLocation(config), log);
             instance = build(config);
             instance.start();
         }
@@ -56,7 +56,7 @@ public final class DesktopHost {
         save();
         if (instance != null) instance.stop();
         // LAN mode master: the shop's local nats-server runs here (before the SDK connects to it on 127.0.0.1).
-        com.magilhub.printnats.desktop.lan.DesktopLanServer.sync(dataDir, c.nats, log);
+        com.magilhub.printnats.desktop.lan.DesktopLanServer.sync(dataDir, c.nats, sessionLocation(c), log);
         instance = build(c);
         instance.start();
     }
@@ -106,6 +106,10 @@ public final class DesktopHost {
         c.applyDevices();
         save();
         if (instance != null) instance.setDevices(devices, c.restaurant);
+    }
+
+    private static String sessionLocation(PrintNatsConfig c) {
+        return c != null && c.session != null ? c.session.locationId : null;
     }
 
     private PrintNatsConfig requireConfig() {
