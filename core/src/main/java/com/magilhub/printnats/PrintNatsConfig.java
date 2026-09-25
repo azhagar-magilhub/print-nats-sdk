@@ -64,7 +64,9 @@ public final class PrintNatsConfig {
         com.magilhub.printnats.rules.Restaurant r = new com.magilhub.printnats.rules.Restaurant(restaurant);
         List<PrinterConfig> derived = com.magilhub.printnats.rules.DeviceList.printers(devices, session.deviceId, r);
         if (derived != null) printers = derived;
-        if (nats != null && devices.size() > 0) nats.isMaster = com.magilhub.printnats.rules.DeviceList.isMaster(devices, session.deviceId);
+        // LAN mode: the host's lease decided the role (rows can be stale offline) — keep it.
+        if (nats != null && devices.size() > 0 && !nats.lanMode)
+            nats.isMaster = com.magilhub.printnats.rules.DeviceList.isMaster(devices, session.deviceId);
     }
 
     public String toJson() {
