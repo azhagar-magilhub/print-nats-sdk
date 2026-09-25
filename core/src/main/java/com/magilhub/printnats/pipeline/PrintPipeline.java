@@ -341,6 +341,11 @@ public final class PrintPipeline implements NatsEvents {
         return enqueueOnce(job(UUID.randomUUID() + "|" + receiptPrinter.id, JobKind.EOD, receiptPrinter.id, payload));
     }
 
+    /** This device has a receipt printer to print on. */
+    public boolean hasReceiptPrinter() {
+        return receiptPrinter() != null;
+    }
+
     private PrinterConfig receiptPrinter() {
         for (PrinterConfig p : printers.all()) {
             if (p.purpose == PrinterConfig.Purpose.RECEIPT) return p;

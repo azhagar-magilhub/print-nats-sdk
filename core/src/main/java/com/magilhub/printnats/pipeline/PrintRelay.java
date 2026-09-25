@@ -62,10 +62,36 @@ public final class PrintRelay {
 
     // ---- master side ----------------------------------------------------------------------------------
 
+    /** Receipts print off the request thread: the client waits for the reply, not for the render. */
+    private final java.util.concurrent.ExecutorService receiptWorker =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "printnats-relay-receipt");
+                t.setDaemon(true);
+                return t;
+            });
+
     /** Request bytes → reply bytes (never null). */
     public byte[] handle(byte[] body) {
         String raw = body == null ? null : new String(body, StandardCharsets.UTF_8);
+        JsonObject req = Json.parseObject(raw);
+        if (req != null && RECEIPT.equals(Json.str(req, "kind")) && Json.obj(req, "order") != null) {
+            return acceptReceipt(raw).toString().getBytes(StandardCharsets.UTF_8);
+        }
         return handle(raw).toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * A client's receipt: answer at once (1 = accepted, 0 = this master has no receipt printer) and print in the
+     * background. The relay hook (host JS) plus the receipt render can take longer than the client's request
+     * timeout; a late answer made the client fall back to the cloud, which has never seen an offline order.
+     */
+    private JsonObject acceptReceipt(final String raw) {
+        if (!pipeline.hasReceiptPrinter()) return ok(0);
+        receiptWorker.execute(() -> {
+            JsonObject r = handle(raw);
+            if (!Json.isTrueBoolean(r, "ok")) log.append("print_", "Info:: relayed receipt not printed: " + Json.str(r, "error"));
+        });
+        return ok(1);
     }
 
     synchronized JsonObject handle(String raw) {
