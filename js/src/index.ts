@@ -14,10 +14,99 @@ interface SidecarInfo {
   token: string;
 }
 
+const PAIRED_KEY = 'print-nats.paired';
+
+/** Endpoint a hosted page got by pairing (pairSidecar), kept in this browser. */
+function pairedEndpoint(): SidecarInfo | undefined {
+  try {
+    const raw = (globalThis as any).localStorage?.getItem(PAIRED_KEY);
+    const v = raw ? JSON.parse(raw) : null;
+    return v && v.port && v.token ? { port: Number(v.port), token: String(v.token) } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Shell-injected (Electron / dev) first, then a paired endpoint (hosted web). */
+function sidecarInfo(): SidecarInfo | undefined {
+  return ((globalThis as any).__PRINT_NATS__ as SidecarInfo | undefined) ?? pairedEndpoint();
+}
+
 function sidecar(): SidecarInfo {
-  const info = (globalThis as any).__PRINT_NATS__ as SidecarInfo | undefined;
+  const info = sidecarInfo();
   if (!info) throw new Error('@merchant/print-nats: desktop sidecar not available (window.__PRINT_NATS__ missing)');
   return info;
+}
+
+/**
+ * Hosted web: connect this browser to the print service on this computer. Opens the sidecar's own approval page
+ * (http://127.0.0.1:<port>/pair); on Allow it posts {port, token} back to this window, which keeps it in
+ * localStorage. Resolves true when paired, false when the window was closed / the service isn't running.
+ */
+export function pairSidecar(port = 8733, timeoutMs = 120_000): Promise<boolean> {
+  const w = globalThis as any;
+  if (typeof w.open !== 'function') return Promise.resolve(false);
+  const origin = w.location?.origin ?? '';
+  const popup = w.open(`http://127.0.0.1:${port}/pair?origin=${encodeURIComponent(origin)}`, 'print-nats-pair',
+    'width=480,height=380');
+  if (!popup) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      w.removeEventListener('message', onMessage);
+      clearInterval(closedPoll);
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== `http://127.0.0.1:${port}` && e.origin !== `http://localhost:${port}`) return;
+      const d = e.data as { type?: string; port?: number; token?: string } | null;
+      if (!d || d.type !== 'print-nats-pair' || !d.token) return;
+      try {
+        w.localStorage.setItem(PAIRED_KEY, JSON.stringify({ port: d.port ?? port, token: d.token }));
+      } catch {
+        finish(false);
+        return;
+      }
+      finish(true);
+    };
+    w.addEventListener('message', onMessage);
+    const closedPoll = setInterval(() => {
+      if (popup.closed) setTimeout(() => finish(false), 300); // a late message still wins
+    }, 500);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+  });
+}
+
+/** Forget a paired print service (e.g. it moved to another port / was reinstalled). */
+export function forgetSidecar(): void {
+  try {
+    (globalThis as any).localStorage?.removeItem(PAIRED_KEY);
+  } catch {
+    /* nothing stored */
+  }
+}
+
+/** Is a print service configured for this page AND answering? (1.5 s) */
+export async function sidecarReachable(): Promise<boolean> {
+  const info = sidecarInfo();
+  if (!info) return false;
+  try {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const t = setTimeout(() => ctrl?.abort(), 1500);
+    const res = await fetch(`http://127.0.0.1:${info.port}/v1/connected`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${info.token}` },
+      body: '{}',
+      signal: ctrl?.signal,
+    });
+    clearTimeout(t);
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 async function call<T>(path: string, body?: unknown): Promise<T> {
@@ -42,7 +131,7 @@ let source: EventSource | null = null;
 function ensureStream() {
   if (source) return;
   // No sidecar (plain browser, no desktop shell): listeners stay registered but never fire; calls reject.
-  const info = (globalThis as any).__PRINT_NATS__ as SidecarInfo | undefined;
+  const info = sidecarInfo();
   if (!info || typeof EventSource === 'undefined') return;
   const { port, token } = info;
   source = new EventSource(`http://127.0.0.1:${port}/v1/events?token=${encodeURIComponent(token)}`);

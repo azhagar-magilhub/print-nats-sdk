@@ -187,3 +187,12 @@ function safeParse(s: string): Record<string, unknown> {
 }
 
 export default PrintNats;
+
+// Web-only pairing helpers (hosted web ↔ desktop print service) — nothing to pair on Android.
+export function pairSidecar(): Promise<boolean> {
+  return Promise.resolve(false);
+}
+export function forgetSidecar(): void {}
+export function sidecarReachable(): Promise<boolean> {
+  return Promise.resolve(false);
+}

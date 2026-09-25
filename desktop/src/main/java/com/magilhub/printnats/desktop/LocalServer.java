@@ -55,6 +55,7 @@ public final class LocalServer {
         this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 50);
         server.setExecutor(Executors.newCachedThreadPool()); // SSE holds a thread per client
         server.createContext("/v1/events", this::events);
+        server.createContext("/pair", this::pairPage);
         server.createContext("/v1/", this::api);
         host.setListener(new PrintNats.Listener() {
             @Override
@@ -138,6 +139,100 @@ public final class LocalServer {
         ex.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
         ex.getResponseHeaders().add("Access-Control-Allow-Headers", "Authorization, Content-Type");
         ex.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        // Chrome Private Network Access: a public https site (hosted web app) calling 127.0.0.1 must be allowed
+        // explicitly in the preflight.
+        if ("true".equalsIgnoreCase(ex.getRequestHeaders().getFirst("Access-Control-Request-Private-Network"))) {
+            ex.getResponseHeaders().add("Access-Control-Allow-Private-Network", "true");
+        }
+    }
+
+    // ---- pairing a hosted web app with this computer's print service ---------------------------------
+    //
+    // The hosted app (a public site) must never carry the token. It opens http://127.0.0.1:<port>/pair?origin=<its
+    // origin> in a popup; this page — served by the sidecar itself, so only someone at this computer sees it — asks
+    // to allow the site, and on Allow hands {port, token} back to the opener with postMessage (to that origin only).
+    // Only allowlisted origins get the page; the approval call accepts only this page's own origin and a one-time
+    // nonce (2 min), so another site can't fetch the token.
+
+    private static final long PAIR_NONCE_TTL_MS = 2 * 60 * 1000;
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> pairNonces = new java.util.concurrent.ConcurrentHashMap<>();
+
+    static java.util.Set<String> allowedPairOrigins() {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>(java.util.Arrays.asList(
+                "https://brisque-lite-staging.web.app",
+                "http://localhost:8090",
+                "http://localhost:8091"));
+        String extra = System.getenv("PRINT_NATS_ALLOWED_ORIGINS");
+        if (extra != null) {
+            for (String o : extra.split(",")) if (!o.trim().isEmpty()) out.add(o.trim());
+        }
+        return out;
+    }
+
+    private void pairPage(HttpExchange ex) throws IOException {
+        String origin = queryParam(ex, "origin");
+        ex.getResponseHeaders().add("X-Frame-Options", "DENY");
+        ex.getResponseHeaders().add("Content-Security-Policy", "frame-ancestors 'none'");
+        if (origin == null || !allowedPairOrigins().contains(origin)) {
+            html(ex, 403, "<p>This site is not allowed to use this computer's print service.</p>");
+            return;
+        }
+        String nonce = java.util.UUID.randomUUID().toString();
+        long now = System.currentTimeMillis();
+        pairNonces.entrySet().removeIf(e -> now - e.getValue() > PAIR_NONCE_TTL_MS);
+        pairNonces.put(nonce, now);
+        String o = GSON.toJson(origin);
+        String page = "<!doctype html><html><head><meta charset='utf-8'><title>Connect print service</title>"
+                + "<style>body{font-family:-apple-system,Segoe UI,sans-serif;max-width:420px;margin:48px auto;padding:0 16px;color:#222}"
+                + "button{background:#E52333;color:#fff;border:0;border-radius:8px;padding:12px 22px;font-size:16px;cursor:pointer}"
+                + "button.secondary{background:#eee;color:#222;margin-left:8px}</style></head><body>"
+                + "<h2>Connect print service</h2>"
+                + "<p>Allow <b id='o'></b> to use this computer's printers and shop network?</p>"
+                + "<button id='allow'>Allow</button><button class='secondary' onclick='window.close()'>Cancel</button>"
+                + "<p id='msg'></p><script>"
+                + "var origin=" + o + ";document.getElementById('o').textContent=origin;"
+                + "document.getElementById('allow').onclick=function(){"
+                + "fetch('/v1/pair/approve',{method:'POST',headers:{'Content-Type':'application/json'},"
+                + "body:JSON.stringify({nonce:" + GSON.toJson(nonce) + "})}).then(function(r){return r.json()}).then(function(e){"
+                + "if(!e||!e.token){document.getElementById('msg').textContent='Could not connect — reopen this window.';return;}"
+                + "if(window.opener){window.opener.postMessage({type:'print-nats-pair',port:e.port,token:e.token},origin);}"
+                + "document.getElementById('msg').textContent='Connected. You can close this window.';setTimeout(function(){window.close()},800);"
+                + "})};</script></body></html>";
+        html(ex, 200, page);
+    }
+
+    /** POST /v1/pair/approve {nonce} — only from the pair page itself (same origin), once per nonce. */
+    private void pairApprove(HttpExchange ex, String body) throws IOException {
+        String origin = ex.getRequestHeaders().getFirst("Origin");
+        String self1 = "http://127.0.0.1:" + port();
+        String self2 = "http://localhost:" + port();
+        String nonce = null;
+        try {
+            nonce = str(JsonParser.parseString(body).getAsJsonObject(), "nonce");
+        } catch (RuntimeException ignored) {
+            // bad body
+        }
+        Long issued = nonce == null ? null : pairNonces.remove(nonce);
+        boolean ok = (self1.equals(origin) || self2.equals(origin)) && issued != null
+                && System.currentTimeMillis() - issued <= PAIR_NONCE_TTL_MS;
+        if (!ok) {
+            respond(ex, 403, "{\"error\":\"pairing not allowed\"}");
+            return;
+        }
+        JsonObject e = new JsonObject();
+        e.addProperty("port", port());
+        e.addProperty("token", new String(token, StandardCharsets.UTF_8));
+        host.log().append("print_", "Info:: print service paired with a web app");
+        respond(ex, 200, e.toString());
+    }
+
+    private static void html(HttpExchange ex, int status, String page) throws IOException {
+        byte[] b = page.getBytes(StandardCharsets.UTF_8);
+        ex.getResponseHeaders().add("Content-Type", "text/html; charset=utf-8");
+        ex.sendResponseHeaders(status, b.length);
+        try (OutputStream os = ex.getResponseBody()) {
+            os.write(b);
+        }
     }
 
     // ---- relayed orders (master): the page's onRelayOrder adjusts them, e.g. assigns the KOT number ----------
@@ -256,11 +351,15 @@ public final class LocalServer {
             ex.close();
             return;
         }
+        String path = ex.getRequestURI().getPath().substring("/v1/".length());
+        if ("pair/approve".equals(path)) { // no token yet — see pairApprove
+            pairApprove(ex, readBody(ex.getRequestBody()));
+            return;
+        }
         if (!authorized(ex)) {
             respond(ex, 401, "{\"error\":\"unauthorized\"}");
             return;
         }
-        String path = ex.getRequestURI().getPath().substring("/v1/".length());
         String body = readBody(ex.getRequestBody());
         try {
             respond(ex, 200, GSON.toJson(handle(path, body.isEmpty() ? "{}" : body)));
