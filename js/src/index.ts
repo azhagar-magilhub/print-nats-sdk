@@ -32,6 +32,8 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
 }
 
 type Handler = (msg: { type: string; payload: any }) => void;
+/** onRelayOrder registrations — the sidecar asks the page about relayed orders only while > 0. */
+let relayHandlers = 0;
 const handlers = new Set<Handler>();
 let source: EventSource | null = null;
 
@@ -44,6 +46,10 @@ function ensureStream() {
   if (!info || typeof EventSource === 'undefined') return;
   const { port, token } = info;
   source = new EventSource(`http://127.0.0.1:${port}/v1/events?token=${encodeURIComponent(token)}`);
+  // A restarted sidecar forgets the relay-order handler registration — re-send it on every (re)connect.
+  source.onopen = () => {
+    if (relayHandlers > 0) call('relay/handler', { active: true }).catch(() => undefined);
+  };
   source.onmessage = (m: MessageEvent) => {
     const msg = JSON.parse(String(m.data));
     handlers.forEach((h) => h(msg));
@@ -110,10 +116,12 @@ export const PrintNats: PrintNatsApi = {
       }
       call('relay/resolve', { requestId: raw.requestId, order: result }).catch(() => undefined);
     });
+    relayHandlers += 1;
     call('relay/handler', { active: true }).catch(() => undefined);
     return () => {
       off();
-      call('relay/handler', { active: false }).catch(() => undefined);
+      relayHandlers -= 1;
+      if (relayHandlers === 0) call('relay/handler', { active: false }).catch(() => undefined);
     };
   },
   printEod: (eod) => call<number>('print/eod', { eod }),
