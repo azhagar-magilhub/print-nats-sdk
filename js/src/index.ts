@@ -3,7 +3,7 @@
 // the shell (Electron main / NW.js) passes in via window.__PRINT_NATS__ = { port, token } (or reads it from the
 // sidecar's <dataDir>/endpoint.json when the sidecar runs as a Windows service).
 import {
-  AppMessage, ConnectionEvent, ConsumerInfo, ConsumerSummary, DurableMessage, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
+  AppMessage, ConnectionEvent, ConsumerInfo, ConsumerSummary, DurableMessage, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, RelayOrderHandler, Session, StatusEvent, Unsubscribe,
 } from './types';
 
 export * from './types';
@@ -97,8 +97,25 @@ export const PrintNats: PrintNatsApi = {
   relayReceipt: (order, cardSurcharge = 0, timeoutMs = 8000) =>
     call<number>('print/relay-receipt', { order, cardSurcharge, timeoutMs }),
   hasReceiptPrinter: () => call<boolean>('printers/has-receipt'),
-  // Desktop phase 2: relayed orders print as received (no JS hook over the sidecar yet).
-  onRelayOrder: () => () => undefined,
+  // Master: the sidecar asks the page before printing a relayed order (e.g. to assign the KOT number) and waits up
+  // to 3 s for relay/resolve — same contract as the Android bridge.
+  onRelayOrder(cb: RelayOrderHandler): Unsubscribe {
+    const off = listen('relay-order', async (raw: { requestId: string; kind: string; order: string }) => {
+      let result: string | null = null;
+      try {
+        const order = await cb({ requestId: raw.requestId, kind: raw.kind as any, order: JSON.parse(raw.order) });
+        result = order ? JSON.stringify(order) : null;
+      } catch {
+        result = null; // print the order as relayed
+      }
+      call('relay/resolve', { requestId: raw.requestId, order: result }).catch(() => undefined);
+    });
+    call('relay/handler', { active: true }).catch(() => undefined);
+    return () => {
+      off();
+      call('relay/handler', { active: false }).catch(() => undefined);
+    };
+  },
   printEod: (eod) => call<number>('print/eod', { eod }),
   printReceiptJson: (receiptJson, textReceipt = false) => call<number>('print/receipt-json', { receiptJson, textReceipt }),
 

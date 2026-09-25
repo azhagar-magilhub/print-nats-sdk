@@ -49,6 +49,7 @@ public final class LocalServer {
     });
 
     public LocalServer(DesktopHost host, int port, String token) throws IOException {
+        host.setRelayOrderHook(this::prepareRelayOrder);
         this.host = host;
         this.token = token.getBytes(StandardCharsets.UTF_8);
         this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), port), 50);
@@ -137,6 +138,45 @@ public final class LocalServer {
         ex.getResponseHeaders().add("Access-Control-Allow-Origin", "*");
         ex.getResponseHeaders().add("Access-Control-Allow-Headers", "Authorization, Content-Type");
         ex.getResponseHeaders().add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    }
+
+    // ---- relayed orders (master): the page's onRelayOrder adjusts them, e.g. assigns the KOT number ----------
+
+    static final long RELAY_ORDER_TIMEOUT_MS = 3000;
+    private volatile boolean relayHandlerActive;
+    private final java.util.concurrent.ConcurrentHashMap<String, PendingRelay> pendingRelays =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final class PendingRelay {
+        final java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        volatile String orderJson;
+    }
+
+    /** Same contract as the Android bridge: ask the page, wait up to 3 s; null → print the order as relayed. */
+    private JsonObject prepareRelayOrder(String kind, JsonObject order) {
+        if (!relayHandlerActive || streams.isEmpty()) return null;
+        String requestId = java.util.UUID.randomUUID().toString();
+        PendingRelay pending = new PendingRelay();
+        pendingRelays.put(requestId, pending);
+        try {
+            JsonObject p = new JsonObject();
+            p.addProperty("requestId", requestId);
+            p.addProperty("kind", kind);
+            p.addProperty("order", order.toString());
+            broadcast("relay-order", p);
+            if (!pending.done.await(RELAY_ORDER_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) return null;
+            String json = pending.orderJson;
+            if (json == null || json.isEmpty()) return null;
+            JsonElement e = JsonParser.parseString(json);
+            return e.isJsonObject() ? e.getAsJsonObject() : null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (RuntimeException e) {
+            return null;
+        } finally {
+            pendingRelays.remove(requestId);
+        }
     }
 
     // ---- SSE ----------------------------------------------------------------------------------------
@@ -257,6 +297,18 @@ public final class LocalServer {
             case "master":
                 host.sdk().updateMasterRole(json.getAsJsonObject().get("isMaster").getAsBoolean());
                 return true;
+            case "relay/handler":
+                relayHandlerActive = json.getAsJsonObject().get("active").getAsBoolean();
+                return true;
+            case "relay/resolve": {
+                JsonObject o = json.getAsJsonObject();
+                PendingRelay pending = pendingRelays.get(str(o, "requestId"));
+                if (pending != null) {
+                    pending.orderJson = str(o, "order");
+                    pending.done.countDown();
+                }
+                return pending != null;
+            }
             // ---- acknowledged, durable sync (JetStream) — same contract as the Android bridge ----
             case "durable/ensure-stream": {
                 JsonObject o = json.getAsJsonObject();

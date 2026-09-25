@@ -38,6 +38,14 @@ public final class DesktopHost {
         return log;
     }
 
+    private com.magilhub.printnats.pipeline.RelayOrderHook relayOrderHook;
+
+    /** Master: host hook for relayed orders (the page's onRelayOrder through LocalServer). Applied now and on rebuild. */
+    public synchronized void setRelayOrderHook(com.magilhub.printnats.pipeline.RelayOrderHook hook) {
+        this.relayOrderHook = hook;
+        if (instance != null) instance.setRelayOrderHook(hook);
+    }
+
     public synchronized void setListener(PrintNats.Listener l) {
         this.listener = l;
     }
@@ -144,6 +152,7 @@ public final class DesktopHost {
                 .receiptRenderer(new com.magilhub.printnats.desktop.render.Java2dReceiptRenderer())
                 .log(log)
                 .listener(listener)
+                .relayOrderHook(relayOrderHook)
                 .dataCapDevice(false)
                 .onPrinterAddressChanged((ids, oldAddress, newAddress) -> persistQuietly()) // c.ipOverrides is live
                 .build();
