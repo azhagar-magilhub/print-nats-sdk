@@ -40,6 +40,9 @@ export interface NatsSettings {
   /** LAN mode, master only: run the bundled nats-server (needs `printNatsLocalServer=true` in gradle.properties). */
   serveLocal?: boolean;
   localPort?: number;
+  /** LAN mode master: this device's lease epoch, announced by UDP beacon (port 41222); the highest epoch wins. Every
+   *  LAN device reports the masters it hears as connection event `lan_master` {deviceId, epoch, ip, port}. */
+  lanEpoch?: number;
 }
 
 export interface LanStatus {

@@ -62,6 +62,8 @@ public final class PrintNats {
     }
 
     private final NatsClient nats;
+    /** LAN mode: UDP master beacon (announce while master, always listen). */
+    private com.magilhub.printnats.nats.LanBeacon beacon;
     /** LAN mode, master only: the cloud connection (PRINTKOT + forwarding status to the cloud). */
     private final NatsClient cloud;
     static final String STATUS_BRIDGE_DURABLE = "statusbridge";
@@ -300,6 +302,7 @@ public final class PrintNats {
 
     /** Recover unfinished work, then connect to NATS. */
     public void start() {
+        startLanBeacon();
         wakePrinters();
         queue.pruneFinished(System.currentTimeMillis() - FINISHED_JOB_RETENTION_MS);
         queue.recover();
@@ -344,7 +347,30 @@ public final class PrintNats {
         return cloud != null;
     }
 
+    /**
+     * LAN mode: listen for master beacons (reported to the host as connection event "lan_master" with
+     * {"deviceId","epoch","ip","port"}) and, as master, announce this device with its lease epoch.
+     */
+    private void startLanBeacon() {
+        if (nats == null) return;
+        final com.magilhub.printnats.nats.NatsConfig c = nats.config();
+        if (!c.lanMode || c.locationId == null || c.deviceId == null) return;
+        beacon = new com.magilhub.printnats.nats.LanBeacon(c.locationId, c.deviceId,
+                (dev, epoch, ip, port) -> {
+                    JsonObject o = new JsonObject();
+                    o.addProperty("deviceId", dev);
+                    o.addProperty("epoch", epoch);
+                    o.addProperty("ip", ip);
+                    o.addProperty("port", port);
+                    pipeline.onConnectionEvent("lan_master", o.toString());
+                });
+        beacon.announce(c.serveLocal, c.lanEpoch, c.localPort);
+        beacon.start();
+    }
+
     public void stop() {
+        if (beacon != null) beacon.stop();
+        beacon = null;
         if (cloud != null) cloud.stop();
         if (nats != null) nats.stop();
         pipeline.shutdown();

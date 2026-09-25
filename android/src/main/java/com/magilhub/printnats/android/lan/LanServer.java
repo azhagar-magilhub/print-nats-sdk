@@ -23,6 +23,7 @@ public final class LanServer {
     private static LocalNatsServer server;
     private static String serverKey;
     private static NsdManager.RegistrationListener registration;
+    private static android.net.wifi.WifiManager.MulticastLock beaconLock;
     private static Context appContext;
 
     private LanServer() {
@@ -51,6 +52,28 @@ public final class LanServer {
         serverKey = key;
         server.start();
         advertise(app, nats.locationId, nats.localPort, log);
+    }
+
+    /**
+     * LAN mode: many Android devices drop UDP broadcasts while the screen is off or to save power unless a Wi-Fi
+     * MulticastLock is held — the master beacon (LanBeacon, port 41222) needs them delivered. Held while LAN mode is on.
+     */
+    public static synchronized void holdBeaconLock(Context context, boolean on) {
+        try {
+            if (on && beaconLock == null) {
+                android.net.wifi.WifiManager wifi = (android.net.wifi.WifiManager)
+                        context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
+                if (wifi == null) return;
+                beaconLock = wifi.createMulticastLock("print-nats-lan-beacon");
+                beaconLock.setReferenceCounted(false);
+                beaconLock.acquire();
+            } else if (!on && beaconLock != null) {
+                beaconLock.release();
+                beaconLock = null;
+            }
+        } catch (Throwable ignored) {
+            // no Wi-Fi service / permission — beacons may still arrive
+        }
     }
 
     /** Sign-out / SDK stop. */

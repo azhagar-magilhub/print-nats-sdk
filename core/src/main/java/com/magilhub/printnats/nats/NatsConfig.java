@@ -32,6 +32,8 @@ public final class NatsConfig {
     public String cloudAuthToken;
     /** Master in LAN mode: the host runs the local nats-server (see LocalNatsServer). */
     public boolean serveLocal;
+    /** LAN mode: this device's master lease epoch — announced by UDP beacon while serveLocal (highest wins). */
+    public long lanEpoch;
     public int localPort = 4222;
 
     /** Consume the PRINTKOT stream on this connection (false for a LAN-mode local connection). */

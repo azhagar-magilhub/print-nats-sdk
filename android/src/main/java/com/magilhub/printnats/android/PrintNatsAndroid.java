@@ -153,6 +153,7 @@ public final class PrintNatsAndroid {
         prefs(context).edit().putString(KEY_CONFIG, config.toJson()).apply();
         if (instance != null) instance.stop();
         com.magilhub.printnats.android.lan.LanServer.sync(context, config.nats, new AndroidLogSink(context.getApplicationContext()));
+        com.magilhub.printnats.android.lan.LanServer.holdBeaconLock(context, config.nats != null && config.nats.lanMode);
         instance = build(context, config);
         applyHostState(instance);
         instance.start();
