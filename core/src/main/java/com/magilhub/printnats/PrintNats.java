@@ -90,6 +90,9 @@ public final class PrintNats {
         this.printers.addAll(b.printers);
         LogSink log = b.log;
         this.logSink = log;
+        // LAN mode: the master is the device running the local server (the UDP lease decided it) — the device rows'
+        // isDefault can be stale with no internet, and two print masters means a client prints its own KOTs.
+        if (b.natsConfig != null && b.natsConfig.lanMode) b.natsConfig.isMaster = b.natsConfig.serveLocal;
         this.masterRole = b.natsConfig != null && b.natsConfig.isMaster;
         final List<PrinterConfig> printerList = this.printers;
         PrintQueue.PrinterLookup lookup = new PrintQueue.PrinterLookup() {
@@ -416,6 +419,7 @@ public final class PrintNats {
 
     /** Manual override; prefer {@link #setDevices} so the role follows the backend device list. */
     public void updateMasterRole(boolean isMaster) {
+        isMaster = lanRole(isMaster);
         boolean changed = masterRole != isMaster;
         masterRole = isMaster;
         if (nats != null) nats.updateMasterRole(isMaster);
@@ -424,6 +428,12 @@ public final class PrintNats {
 
     public boolean isMaster() {
         return masterRole;
+    }
+
+    /** In LAN mode the role is fixed by the lease (serveLocal); otherwise {@code fallback} (device rows / host). */
+    private boolean lanRole(boolean fallback) {
+        NatsConfig c = nats != null ? nats.config() : null;
+        return c != null && c.lanMode ? c.serveLocal : fallback;
     }
 
     /**
@@ -435,7 +445,7 @@ public final class PrintNats {
         com.magilhub.printnats.rules.Restaurant r = new com.magilhub.printnats.rules.Restaurant(restaurantDetails);
         List<PrinterConfig> derived = com.magilhub.printnats.rules.DeviceList.printers(devices, session.deviceId, r);
         if (derived != null) setPrinters(derived);
-        boolean master = com.magilhub.printnats.rules.DeviceList.isMaster(devices, session.deviceId);
+        boolean master = lanRole(com.magilhub.printnats.rules.DeviceList.isMaster(devices, session.deviceId));
         if (master != masterRole) {
             masterRole = master;
             if (nats != null) nats.updateMasterRole(master);
