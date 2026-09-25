@@ -19,6 +19,8 @@ dependencies {
     implementation project(':core')
     // Java2D receipt renderer (render/legacy PrintUtil): QR codes — same version as the Android adapter, Java 7+.
     implementation 'com.google.zxing:core:3.4.1'
+    // LAN mode: advertise / find the shop's master server over mDNS (_maghilnats._tcp), like Android NSD. Java 8.
+    implementation 'org.jmdns:jmdns:3.5.9'
     testImplementation "junit:junit:$junitVersion"
 }
 

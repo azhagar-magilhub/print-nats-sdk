@@ -306,7 +306,8 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
         m.putBoolean("serverRunning", com.magilhub.printnats.android.lan.LanServer.isRunning());
         m.putBoolean("cloudLink", s != null && s.hasCloudLink());
         m.putBoolean("cloudConnected", s != null && s.isCloudConnected());
-        m.putString("serverUrl", c != null && c.nats != null ? c.nats.serverUrls : null);
+        m.putString("serverUrl", c != null && c.nats != null
+                ? com.magilhub.printnats.nats.NatsClient.redact(c.nats.serverUrls) : null); // never the credentials
         promise.resolve(m);
     }
 

@@ -308,7 +308,7 @@ export interface PrintNatsApi {
   onAppMessage(cb: (m: AppMessage) => void): Unsubscribe;
 
   /*
-   * Acknowledged, durable app sync (JetStream). Android only; desktop rejects with "not supported".
+   * Acknowledged, durable app sync (JetStream). Android (RN bridge) and desktop / web (sidecar).
    */
   /** Idempotent add-or-update: File storage, Nats-Msg-Id dedup window 2 min. Rejects when not connected. */
   ensureStream(name: string, subjects: string[], maxAgeMs: number): Promise<void>;
@@ -335,7 +335,7 @@ export interface PrintNatsApi {
   /** Resolves also when it didn't exist. */
   deleteConsumer(stream: string, durable: string): Promise<void>;
 
-  // ---- LAN mode (Android) ----
+  // ---- LAN mode (Android; desktop / web through the sidecar) ----
   /** Shop-local auth token (same on master and clients, derived offline). */
   lanToken(secret: string, locationId: string): Promise<string>;
   /** `host:port` of this location's master server found on the shop network (NSD), or null. */

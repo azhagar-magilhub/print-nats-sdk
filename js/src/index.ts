@@ -3,7 +3,7 @@
 // the shell (Electron main / NW.js) passes in via window.__PRINT_NATS__ = { port, token } (or reads it from the
 // sidecar's <dataDir>/endpoint.json when the sidecar runs as a Windows service).
 import {
-  AppMessage, ConnectionEvent, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
+  AppMessage, ConnectionEvent, ConsumerInfo, ConsumerSummary, DurableMessage, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig, Session, StatusEvent, Unsubscribe,
 } from './types';
 
 export * from './types';
@@ -64,10 +64,6 @@ function listen<T>(type: string, cb: (e: T) => void): Unsubscribe {
       source = null;
     }
   };
-}
-
-function notSupported(name: string): Promise<never> {
-  return Promise.reject(new Error(`@merchant/print-nats: ${name} is not supported on desktop`));
 }
 
 export const PrintNats: PrintNatsApi = {
@@ -134,21 +130,36 @@ export const PrintNats: PrintNatsApi = {
   },
   onAppMessage: (cb: (m: AppMessage) => void) => listen('app-message', cb),
   testPrint: (printer: PrinterConfig) => call<{ ok: boolean; message?: string | null }>('printers/test', printer),
-  // Acknowledged durable sync: Android only for now (desktop sidecar has no JetStream endpoints yet).
-  ensureStream: () => notSupported('ensureStream'),
-  publishDurable: () => notSupported('publishDurable'),
-  startDurable: () => notSupported('startDurable'),
-  stopDurable: () => notSupported('stopDurable'),
-  onDurableMessage: () => () => undefined,
-  ackDurable: () => notSupported('ackDurable'),
-  nakDurable: () => notSupported('nakDurable'),
-  consumerInfo: () => notSupported('consumerInfo'),
-  listConsumers: () => notSupported('listConsumers'),
-  deleteConsumer: () => notSupported('deleteConsumer'),
-  lanToken: () => notSupported('lanToken'),
-  findMaster: () => notSupported('findMaster'),
-  localIp: () => notSupported('localIp'),
-  lanStatus: () => notSupported('lanStatus'),
+  // Acknowledged durable sync (JetStream) through the sidecar — same contract as the Android bridge: messages arrive
+  // on the event stream while a listener is attached; without one they stay unacked and are redelivered.
+  ensureStream: async (name: string, subjects: string[], maxAgeMs: number) => {
+    await call('durable/ensure-stream', { name, subjects, maxAgeMs });
+  },
+  publishDurable: (subject: string, data: string, msgId: string) =>
+    call<number>('durable/publish', { subject, data, msgId }),
+  startDurable: async ({ stream, durable, filterSubject, deliverPolicy }) => {
+    await call('durable/start', { stream, durable, filterSubject, deliverPolicy: deliverPolicy ?? 'all' });
+  },
+  stopDurable: async (durable: string) => {
+    await call('durable/stop', { durable });
+  },
+  onDurableMessage: (cb: (m: DurableMessage) => void) => listen('durable', cb),
+  ackDurable: async (token: string) => {
+    await call('durable/ack', { token });
+  },
+  nakDurable: async (token: string, delayMs = 0) => {
+    await call('durable/nak', { token, delayMs });
+  },
+  consumerInfo: (stream: string, durable: string) => call<ConsumerInfo | null>('durable/consumer-info', { stream, durable }),
+  listConsumers: (stream: string) => call<ConsumerSummary[]>('durable/consumers', { stream }),
+  deleteConsumer: async (stream: string, durable: string) => {
+    await call('durable/delete', { stream, durable });
+  },
+  // LAN mode: the desktop master runs the shop's local nats-server inside the sidecar (DesktopLanServer).
+  lanToken: (secret: string, locationId: string) => call<string>('lan/token', { secret, locationId }),
+  findMaster: (locationId: string, timeoutMs = 5000) => call<string | null>('lan/find-master', { locationId, timeoutMs }),
+  localIp: () => call<string | null>('lan/local-ip'),
+  lanStatus: () => call('lan/status'),
   submitMessage: (messageType: string, messageData: string, messageId: string) =>
     call<boolean>('messages/submit', { messageType, messageData, messageId }),
 };

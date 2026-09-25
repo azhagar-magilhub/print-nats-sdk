@@ -45,6 +45,7 @@ public final class DesktopHost {
     /** Start from the saved config (if any). */
     public synchronized void startSaved() {
         if (config != null && instance == null) {
+            com.magilhub.printnats.desktop.lan.DesktopLanServer.sync(dataDir, config.nats, log);
             instance = build(config);
             instance.start();
         }
@@ -54,6 +55,8 @@ public final class DesktopHost {
         this.config = c;
         save();
         if (instance != null) instance.stop();
+        // LAN mode master: the shop's local nats-server runs here (before the SDK connects to it on 127.0.0.1).
+        com.magilhub.printnats.desktop.lan.DesktopLanServer.sync(dataDir, c.nats, log);
         instance = build(c);
         instance.start();
     }
@@ -61,6 +64,12 @@ public final class DesktopHost {
     public synchronized void stop() {
         if (instance != null) instance.stop();
         instance = null;
+        com.magilhub.printnats.desktop.lan.DesktopLanServer.stop();
+    }
+
+    /** The saved config (LAN status), or null before the first configure. */
+    public synchronized PrintNatsConfig config() {
+        return config;
     }
 
     public synchronized PrintNats sdk() {
@@ -124,6 +133,8 @@ public final class DesktopHost {
                 .jobStore(new FileStores.Jobs(new File(dataDir, "jobs.json")))
                 .inboundStore(new FileStores.Inbound(new File(dataDir, "inbound.json")))
                 .outboxStore(new FileStores.Outbox(new File(dataDir, "outbox.json")))
+                // LAN master: print status forwarded to the cloud is buffered here while the internet is out
+                .cloudOutboxStore(new FileStores.Outbox(new File(dataDir, "outbox-cloud.json")))
                 .transport(transport)
                 .starEncoder(new com.magilhub.printnats.render.StarDotImpactEncoder())
                 .receiptRenderer(new com.magilhub.printnats.desktop.render.Java2dReceiptRenderer())

@@ -840,7 +840,8 @@ public final class NatsClient {
             java.util.regex.Pattern.compile("(://)[^/@\\s:]+:[^@\\s/]+@");
 
     /** nats://user:pass@host → nats://***:***@host, so logs and events never carry NATS credentials. */
-    static String redact(String s) {
+    /** URL(s) with any user:password masked — for logs and status shown in the UI. */
+    public static String redact(String s) {
         return s == null ? null : URL_CREDENTIALS.matcher(s).replaceAll("$1***:***@");
     }
 }

@@ -156,6 +156,33 @@ public final class LocalServer {
         // The handler returns; the stream stays open until the client disconnects (write fails → removed).
     }
 
+    /**
+     * A durable message goes to the page only while one is listening (an open /v1/events stream); otherwise it stays
+     * unacked and JetStream redelivers it after ackWait — the SDK never acks on its own (Android bridge parity).
+     */
+    private boolean onDurableMessage(com.magilhub.printnats.nats.DurableMessage m) {
+        if (streams.isEmpty()) return false;
+        JsonObject p = new JsonObject();
+        p.addProperty("token", m.token);
+        p.addProperty("durable", m.durable);
+        p.addProperty("subject", m.subject);
+        p.addProperty("data", new String(m.data, StandardCharsets.UTF_8));
+        p.addProperty("streamSeq", m.streamSeq);
+        p.addProperty("deliveredCount", m.deliveredCount);
+        broadcast("durable", p);
+        return true;
+    }
+
+    private static JsonObject consumerJson(com.magilhub.printnats.nats.ConsumerStats st) {
+        JsonObject o = new JsonObject();
+        o.addProperty("durable", st.durable);
+        o.addProperty("numPending", st.numPending);
+        o.addProperty("numAckPending", st.numAckPending);
+        o.addProperty("ackFloorStreamSeq", st.ackFloorStreamSeq);
+        o.addProperty("delivered", st.delivered);
+        return o;
+    }
+
     private void broadcast(String type, JsonObject payload) {
         JsonObject msg = new JsonObject();
         msg.addProperty("type", type);
@@ -230,6 +257,76 @@ public final class LocalServer {
             case "master":
                 host.sdk().updateMasterRole(json.getAsJsonObject().get("isMaster").getAsBoolean());
                 return true;
+            // ---- acknowledged, durable sync (JetStream) — same contract as the Android bridge ----
+            case "durable/ensure-stream": {
+                JsonObject o = json.getAsJsonObject();
+                List<String> subjects = new java.util.ArrayList<>();
+                for (JsonElement e : o.getAsJsonArray("subjects")) subjects.add(e.getAsString());
+                host.sdk().ensureStream(str(o, "name"), subjects, o.get("maxAgeMs").getAsLong());
+                return true;
+            }
+            case "durable/publish": {
+                JsonObject o = json.getAsJsonObject();
+                return host.sdk().publishDurable(str(o, "subject"), str(o, "data").getBytes(StandardCharsets.UTF_8),
+                        str(o, "msgId"));
+            }
+            case "durable/start": {
+                JsonObject o = json.getAsJsonObject();
+                host.sdk().startDurable(str(o, "stream"), str(o, "durable"), str(o, "filterSubject"),
+                        "new".equals(str(o, "deliverPolicy")), this::onDurableMessage);
+                return true;
+            }
+            case "durable/stop":
+                host.sdk().stopDurable(str(json.getAsJsonObject(), "durable"));
+                return true;
+            case "durable/ack":
+                return host.isRunning() && host.sdk().ackDurable(str(json.getAsJsonObject(), "token"));
+            case "durable/nak": {
+                JsonObject o = json.getAsJsonObject();
+                long delay = o.has("delayMs") ? o.get("delayMs").getAsLong() : 0L;
+                return host.isRunning() && host.sdk().nakDurable(str(o, "token"), delay);
+            }
+            case "durable/consumer-info": {
+                JsonObject o = json.getAsJsonObject();
+                com.magilhub.printnats.nats.ConsumerStats st = host.sdk().consumerInfo(str(o, "stream"), str(o, "durable"));
+                return st == null ? null : consumerJson(st);
+            }
+            case "durable/consumers": {
+                com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+                for (com.magilhub.printnats.nats.ConsumerStats st : host.sdk().listConsumers(str(json.getAsJsonObject(), "stream"))) {
+                    out.add(consumerJson(st));
+                }
+                return out;
+            }
+            case "durable/delete": {
+                JsonObject o = json.getAsJsonObject();
+                return host.sdk().deleteConsumer(str(o, "stream"), str(o, "durable"));
+            }
+            // ---- LAN mode (desktop master runs the shop's local nats-server) ----
+            case "lan/token": {
+                JsonObject o = json.getAsJsonObject();
+                return com.magilhub.printnats.nats.NatsConfig.lanToken(str(o, "secret"), str(o, "locationId"));
+            }
+            case "lan/find-master": {
+                JsonObject o = json.getAsJsonObject();
+                long timeout = o.has("timeoutMs") ? o.get("timeoutMs").getAsLong() : 5000L;
+                return com.magilhub.printnats.desktop.lan.DesktopLanDiscovery.find(str(o, "locationId"), timeout);
+            }
+            case "lan/local-ip":
+                return com.magilhub.printnats.desktop.lan.DesktopLanServer.localIp();
+            case "lan/status": {
+                com.magilhub.printnats.PrintNatsConfig c = host.config();
+                JsonObject st = new JsonObject();
+                boolean running = host.isRunning();
+                st.addProperty("connected", running && host.sdk().isNatsConnected());
+                st.addProperty("serving", c != null && c.nats != null && c.nats.serveLocal);
+                st.addProperty("serverRunning", com.magilhub.printnats.desktop.lan.DesktopLanServer.isRunning());
+                st.addProperty("cloudLink", running && host.sdk().hasCloudLink());
+                st.addProperty("cloudConnected", running && host.sdk().isCloudConnected());
+                st.addProperty("serverUrl", c != null && c.nats != null
+                        ? com.magilhub.printnats.nats.NatsClient.redact(c.nats.serverUrls) : null); // never the credentials
+                return st;
+            }
             case "master/status":
                 return host.isRunning() && host.sdk().isMaster();
             case "connected":
@@ -351,5 +448,9 @@ public final class LocalServer {
             }
         }
         return null;
+    }
+
+    private static String str(JsonObject o, String key) {
+        return o.has(key) && !o.get(key).isJsonNull() ? o.get(key).getAsString() : null;
     }
 }

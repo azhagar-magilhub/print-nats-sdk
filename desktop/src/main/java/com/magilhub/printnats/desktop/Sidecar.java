@@ -23,6 +23,7 @@ public final class Sidecar {
             if ("--port".equals(args[i])) port = Integer.parseInt(args[i + 1]);
             else if ("--token".equals(args[i])) token = args[i + 1];
             else if ("--data-dir".equals(args[i])) dataDir = new File(args[i + 1]);
+            else if ("--nats-server".equals(args[i])) com.magilhub.printnats.desktop.lan.DesktopLanServer.setBinary(args[i + 1]);
         }
         if (token == null || token.isEmpty()) token = randomToken();
 
