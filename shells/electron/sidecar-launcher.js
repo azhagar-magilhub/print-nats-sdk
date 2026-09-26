@@ -52,7 +52,18 @@ function launch(opts, cb) {
     token: token,
     stop: function () {
       stopped = true;
-      if (child) child.kill();
+      if (!child) return;
+      if (process.platform === 'win32' && child.pid) {
+        // child.kill() ends only java.exe on Windows — the nats-server.exe it started would be orphaned and keep the
+        // app's install folder locked (installer / uninstaller: "cannot be closed"). End the whole tree.
+        try {
+          childProcess.execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {windowsHide: true, stdio: 'ignore'});
+        } catch (e) {
+          child.kill();
+        }
+      } else {
+        child.kill();
+      }
     },
   };
 
