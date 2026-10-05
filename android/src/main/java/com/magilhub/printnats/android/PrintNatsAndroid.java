@@ -157,6 +157,7 @@ public final class PrintNatsAndroid {
         instance = build(context, config);
         applyHostState(instance);
         instance.start();
+        com.magilhub.printnats.android.render.ReceiptLogoCache.prefetch(context, config.restaurant);
         return instance;
     }
 
@@ -186,6 +187,7 @@ public final class PrintNatsAndroid {
         c.restaurant = restaurant;
         prefs(context).edit().putString(KEY_CONFIG, c.toJson()).apply();
         if (instance != null) instance.setRestaurant(restaurant);
+        com.magilhub.printnats.android.render.ReceiptLogoCache.prefetch(context, restaurant);
     }
 
     public static synchronized void setPrinters(Context context, java.util.List<PrinterConfig> printers) {

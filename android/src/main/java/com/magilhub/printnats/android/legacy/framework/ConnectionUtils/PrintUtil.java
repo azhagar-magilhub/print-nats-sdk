@@ -3619,8 +3619,9 @@ public class PrintUtil {
                 try {
                     android.os.StrictMode.ThreadPolicy policy = new android.os.StrictMode.ThreadPolicy.Builder().permitAll().build();
                     android.os.StrictMode.setThreadPolicy(policy);
-                    java.net.URL url = new java.net.URL(logoUrl);
-                    android.graphics.Bitmap logoBitmap = android.graphics.BitmapFactory.decodeStream(url.openConnection().getInputStream());
+                    // SDK: this device's saved copy first (prints offline), else download + save
+                    // (MerchantApp offline sends logoBase64 in the payload instead — see ReceiptLogoCache).
+                    android.graphics.Bitmap logoBitmap = com.magilhub.printnats.android.render.ReceiptLogoCache.load(context, logoUrl);
                     if (logoBitmap != null) {
                         int targetWidth = Math.round(effectiveWidth * 0.6f);
                         int targetHeight = Math.round(((float) logoBitmap.getHeight()) * ((float) targetWidth) / ((float) logoBitmap.getWidth()));
@@ -4794,8 +4795,9 @@ public class PrintUtil {
                 try {
                     android.os.StrictMode.ThreadPolicy policy = new android.os.StrictMode.ThreadPolicy.Builder().permitAll().build();
                     android.os.StrictMode.setThreadPolicy(policy);
-                    java.net.URL url = new java.net.URL(logoUrl);
-                    android.graphics.Bitmap logoBitmap = android.graphics.BitmapFactory.decodeStream(url.openConnection().getInputStream());
+                    // SDK: this device's saved copy first (prints offline), else download + save
+                    // (MerchantApp offline sends logoBase64 in the payload instead — see ReceiptLogoCache).
+                    android.graphics.Bitmap logoBitmap = com.magilhub.printnats.android.render.ReceiptLogoCache.load(context, logoUrl);
                     if (logoBitmap != null) {
                         int targetWidth = Math.round(effectiveWidth * 0.6f);
                         int targetHeight = Math.round(((float) logoBitmap.getHeight()) * ((float) targetWidth) / ((float) logoBitmap.getWidth()));
