@@ -106,3 +106,5 @@ ETA on templates 2–5; `isFlushDB` silently clears queued/failed jobs.
 | A | Star T1 (`printStarKot`) | `receipt.getFooter().getLine1()` NPE when `footer` is missing (JS always sends it today; NATS-only paths may not) |
 | B | All templates | 45-minute freshness guard silently drops stale KOTs; SDK surfaces it as a skip reason instead of silent success |
 | C | Thermal T1 | `kotAlignmenet` "TEXT_ALIGN_LEFT" branch compares against `kotFont` (dead code; both branches LEFT) |
+
+- **EOD slip heading** — MerchantApp prints "Cash Reconcilitation"; the SDK prints the corrected "Cash Reconciliation" (`legacy/.../PrintUtil.java`). Intentional text divergence.

@@ -824,7 +824,7 @@ public class PrintUtil {
 
 
                 printerCommands.printText("---------------------------------------------- \n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
-                printerCommands.printText("Cash Reconcilitation" + "\n\n", EscPosPrinterCommands.TEXT_SIZE_BIG);
+                printerCommands.printText("Cash Reconciliation" + "\n\n", EscPosPrinterCommands.TEXT_SIZE_BIG);
                 printerCommands.printText("Expected Amount   " + currency + String.format("%.2f", expectedAmount) + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
                 printerCommands.printText("Counted Amount    " + currency + String.format("%.2f", countedAmount) + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
                 printerCommands.printText("Variance          " + currency + String.format("%.2f", variance) + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
