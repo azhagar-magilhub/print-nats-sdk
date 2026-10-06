@@ -70,12 +70,29 @@ public final class PrintRelay {
                 return t;
             });
 
+    /**
+     * KOTs print off the request thread too, one at a time in arrival order. The relay hook waits for the host's
+     * JS (KOT number), which is slow while the master's own app is busy; answering only after it made a client's
+     * KOTs queue up behind each other (each request waited its turn) and print long after the master's own,
+     * instead of in the order the orders were placed.
+     */
+    private final java.util.concurrent.ExecutorService kotWorker =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "printnats-relay-kot");
+                t.setDaemon(true);
+                return t;
+            });
+
     /** Request bytes → reply bytes (never null). */
     public byte[] handle(byte[] body) {
         String raw = body == null ? null : new String(body, StandardCharsets.UTF_8);
         JsonObject req = Json.parseObject(raw);
         if (req != null && RECEIPT.equals(Json.str(req, "kind")) && Json.obj(req, "order") != null) {
             return acceptReceipt(raw).toString().getBytes(StandardCharsets.UTF_8);
+        }
+        String kind = req == null ? null : Json.str(req, "kind");
+        if ((KOT.equals(kind) || EDIT_KOT.equals(kind)) && Json.obj(req, "order") != null) {
+            return acceptKot(raw, req).toString().getBytes(StandardCharsets.UTF_8);
         }
         return handle(raw).toString().getBytes(StandardCharsets.UTF_8);
     }
@@ -90,6 +107,46 @@ public final class PrintRelay {
         receiptWorker.execute(() -> {
             JsonObject r = handle(raw);
             if (!Json.isTrueBoolean(r, "ok")) log.append("print_", "Info:: relayed receipt not printed: " + Json.str(r, "error"));
+        });
+        return ok(1);
+    }
+
+    /**
+     * A client's KOT: store it durably (deduplicated by relayId), answer at once, print in the background in
+     * arrival order. A crash after the answer leaves it pending in the inbound store → printed by
+     * {@link #replay} at the next start, exactly as before.
+     */
+    private JsonObject acceptKot(final String raw, JsonObject req) {
+        String relayId = Json.str(req, "relayId");
+        String kind = Json.str(req, "kind");
+        if (relayId == null) return error("Bad relay request");
+        final String key = KEY_PREFIX + relayId;
+        boolean fresh;
+        synchronized (this) {
+            try {
+                fresh = inbound.record(new InboundStore.Inbound(key, "RELAY_" + kind, raw, relayId, System.currentTimeMillis()));
+            } catch (RuntimeException e) {
+                log.append("fcmInsights_", "Relay store failed relayId=" + relayId + ": " + e);
+                return error("Master could not store the request: " + e.getMessage());
+            }
+            if (!fresh && !stillPending(key)) {
+                log.append("fcmInsights_", "Duplicate relay dropped relayId=" + relayId + " from=" + Json.str(req, "from"));
+                return ok(0);
+            }
+            if (!fresh) return ok(1); // still pending from an earlier delivery — already queued / replayed
+        }
+        log.append("fcmInsights_", "Relay accepted " + kind + " relayId=" + relayId + " from=" + Json.str(req, "from")
+                + " orderNo=" + Json.str(Json.obj(req, "order"), "orderNo"));
+        final JsonObject queued = req;
+        kotWorker.execute(() -> {
+            try {
+                print(queued);
+            } catch (RuntimeException e) {
+                // left pending: replayed at the next start
+                log.append("print_", "Exception:: relay print failed relayId=" + Json.str(queued, "relayId") + ": " + e);
+                return;
+            }
+            inbound.markDone(key);
         });
         return ok(1);
     }
