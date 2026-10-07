@@ -258,13 +258,18 @@ public final class PrintQueue {
 
     /**
      * Attempt every waiting relay job now (NATS (re)connected, master role changed): PENDING ones are offered to the
-     * relay lane, FAILED ones (the master answered with an error) go back to PENDING. Returns the number kicked.
+     * relay lane, FAILED ones (the master answered with an error) go back to PENDING — except a job that gave up
+     * waiting for the master, which stays failed. Returns the number kicked.
      */
     public int kickRelay() {
         int n = 0;
         for (PrintJob j : store.findByStatus(JobStatus.PENDING, JobStatus.FAILED)) {
             if (!PrinterConfig.isRelay(j.printerId)) continue;
             if (j.status == JobStatus.FAILED) {
+                // A job that gave up waiting (relayMaxWaitMs) is NOT sent when the link comes back: that late, the
+                // kitchen has moved on and an unannounced ticket is how a dish is made twice. A person decides —
+                // manual retry from the failed queue still sends it.
+                if (j.reason != null && j.reason.startsWith(RELAY_GAVE_UP_PREFIX)) continue;
                 if (retry(j.jobId)) n++;
             } else {
                 laneFor(j.printerId).offer(j.jobId);

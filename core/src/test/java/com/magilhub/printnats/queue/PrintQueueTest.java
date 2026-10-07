@@ -332,6 +332,34 @@ public class PrintQueueTest {
     }
 
     @Test
+    public void aRelayThatGaveUpIsNotSentWhenTheLinkComesBackButAManualRetrySendsIt() throws Exception {
+        final java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        final java.util.concurrent.atomic.AtomicBoolean masterBack = new java.util.concurrent.atomic.AtomicBoolean();
+        queue.setRelayPolicy(new RetryPolicy(Integer.MAX_VALUE, 20, true, true, 20));
+        queue.setRelayTransport(new com.magilhub.printnats.spi.PrinterTransport() {
+            @Override
+            public PrintResult send(PrinterConfig printer, byte[] data) {
+                attempts.incrementAndGet();
+                return masterBack.get() ? PrintResult.success()
+                        : new PrintResult(PrintOutcome.CONNECTION_FAILED, "Waiting for master device");
+            }
+        });
+        queue.setRelayMaxWaitMs(120);
+        queue.enqueue(job("R3", PrinterConfig.RELAY_MASTER_ID));
+        awaitStatus("R3", JobStatus.FAILED);
+
+        masterBack.set(true);
+        int before = attempts.get();
+        assertEquals("the link is back — nothing is kicked", 0, queue.kickRelay());
+        Thread.sleep(120);
+        assertEquals(before, attempts.get());
+        assertEquals(JobStatus.FAILED, store.get("R3").status);
+
+        assertTrue(queue.retry("R3")); // a person sends it from the failed queue
+        awaitStatus("R3", JobStatus.SUCCESS);
+    }
+
+    @Test
     public void relayWaitsOnWithoutAMaxWait() throws Exception {
         java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
         relayAlwaysWaiting(attempts);
