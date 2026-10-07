@@ -92,6 +92,30 @@ public class RulesTest {
     }
 
     @Test
+    public void batchNoteOnlyForACancelledOrderOrALaterBatch() {
+        KotPayloadBuilder b = new KotPayloadBuilder(restaurant("4"), dates);
+        // batch > 1 → Fire, for a counter (in-store) order as well as dine-in
+        for (String type : new String[]{"OT-P", "OT-D"}) {
+            JsonObject later = order(type);
+            later.addProperty("sortOrder", 3);
+            assertEquals("true", s(b.kot(later, "", false), "showBatchNote"));
+        }
+        // first batch, and a ticket with no usable batch number → no note
+        for (String batch : new String[]{"1", "0", "", "abc"}) {
+            JsonObject o = order("OT-P");
+            o.addProperty("sortOrder", batch);
+            assertEquals("batch '" + batch + "'", "false", s(b.kot(o, "", false), "showBatchNote"));
+        }
+        JsonObject none = order("OT-P");
+        none.remove("sortOrder");
+        assertEquals("false", s(b.kot(none, "", false), "showBatchNote"));
+        // cancelled → the note (VOIDED), whatever the batch
+        JsonObject cancelled = order("OT-P");
+        cancelled.addProperty("sortOrder", 1);
+        assertEquals("true", s(b.kot(cancelled, "", true), "showBatchNote"));
+    }
+
+    @Test
     public void editKotIsAlwaysCancelledWithBatchNote() {
         JsonObject o = order("OT-P");
         o.addProperty("orderTypeGroup", "P");

@@ -84,7 +84,9 @@ public final class KotPayloadBuilder {
         p.addProperty("getGuestCountUpFront", r.flag("getGuestCountUpFront", "false"));
         p.addProperty("kotNo", or(str(order, "kotNo"), ""));
         String sortOrder = str(order, "sortOrder");
-        p.addProperty("showBatchNote", (isOrderCancelled || (sortOrder != null && !"1".equals(sortOrder))) ? "true" : "false");
+        // Batch note (the "Fire" text, or VOIDED): a cancelled order, or a later batch of an order (batch > 1).
+        // The first batch — and a ticket with no usable batch number (missing, 0, not a number) — prints without it.
+        p.addProperty("showBatchNote", (isOrderCancelled || isLaterBatch(sortOrder)) ? "true" : "false");
         transactions(order, p);
         p.addProperty("templateNo", template);
         p.addProperty("buzzerNo", or(str(order, "buzzerNo"), ""));
@@ -139,6 +141,16 @@ public final class KotPayloadBuilder {
         p.addProperty("templateNo", template);
         p.addProperty("buzzerNo", or(str(order, "buzzerNo"), ""));
         return p;
+    }
+
+    /** Batch number greater than 1 — items added to an order the kitchen already has. */
+    static boolean isLaterBatch(String sortOrder) {
+        if (sortOrder == null) return false;
+        try {
+            return Double.parseDouble(sortOrder.trim()) > 1;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     // ---- shared pieces ------------------------------------------------------------------------------
