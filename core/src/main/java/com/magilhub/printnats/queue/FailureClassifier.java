@@ -2,7 +2,7 @@ package com.magilhub.printnats.queue;
 
 /**
  * Failure message → retry decision and Failed-Print-Queue category. Ported verbatim from MerchantApp
- * {@code PrintFrameworkModule.isPhysicalFaultMessage / classifyFailureCategory} (Release-25.1), which match
+ * {@code PrintFrameworkModule.isPhysicalFaultMessage / classifyFailureCategory} (Release-30.5), which match
  * on the user-facing strings both printer brands already produce.
  */
 public final class FailureClassifier {
@@ -24,6 +24,11 @@ public final class FailureClassifier {
                 || m.contains("out of paper")
                 || m.contains("paper jam")
                 || m.contains("cutter error")
+                || m.contains("mechanical error")
+                || m.contains("voltage error")
+                || m.contains("unrecoverable error")
+                // the ticket may have printed — a person checks before it is sent again
+                || m.contains("did not confirm")
                 || m.contains("offline")
                 || m.contains("not responding")
                 || m.contains("no usb printer")

@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.magilhub.printnats.queue.FailureClassifier;
+import com.magilhub.printnats.queue.PrintResult;
 import com.magilhub.printnats.queue.JobListener;
 import com.magilhub.printnats.queue.PrintJob;
 import com.magilhub.printnats.queue.PrintQueue;
@@ -69,7 +70,10 @@ public final class StatusPublisher implements JobListener {
             default:
                 return;
         }
-        final JsonObject json = buildJobEvent(job, status, "print_failed".equals(status) ? job.reason : null);
+        // print_failed carries why; a completed print carries the transport's detail when it gave one (Star LAN:
+        // confirmed / unconfirmed). A skipped job's reason is why it was skipped — not a print result.
+        final boolean withReason = "print_failed".equals(status) || "print completed".equals(event);
+        final JsonObject json = buildJobEvent(job, status, withReason ? job.reason : null);
         publishAsync(json);
     }
 
@@ -140,6 +144,11 @@ public final class StatusPublisher implements JobListener {
             type = "CancelKot";
             JsonElement items = data.get("items");
             if (items != null && items.isJsonArray() && ((JsonArray) items).size() > 0) extra.add("originalItems", items);
+        }
+        if ("print completed".equals(status) && reason != null) {
+            // Did the printer itself confirm the ticket printed, or was it only sent?
+            extra.addProperty("confirmation",
+                    reason.startsWith(PrintResult.CONFIRMED_PREFIX) ? "PRINTER_CONFIRMED" : "UNCONFIRMED");
         }
         if ("print_failed".equals(status)) {
             extra.addProperty("deviceOnline", device.isNetworkConnected());

@@ -64,4 +64,23 @@ public class FailureClassifierTest {
         assertEquals(FailureClassifier.CATEGORY_UNKNOWN, FailureClassifier.category("something odd"));
         assertEquals(FailureClassifier.CATEGORY_UNKNOWN, FailureClassifier.category(null));
     }
+
+    @Test
+    public void starLanResultsFromRelease305() {
+        // a person has to look at the printer — never auto-retried
+        assertTrue(FailureClassifier.isPhysicalFault("Printer mechanical error. Power-cycle the printer."));
+        assertTrue(FailureClassifier.isPhysicalFault("Printer power/voltage error. Check the power supply."));
+        assertTrue(FailureClassifier.isPhysicalFault("Printer unrecoverable error. Power-cycle the printer."));
+        assertTrue(FailureClassifier.isPhysicalFault(
+                "Printer did not confirm the print within 20s. Check the printer and reprint if needed."));
+        assertTrue(FailureClassifier.isPhysicalFault(
+                "Printer not responding mid-print. Ticket may be incomplete - check the printer."));
+        // transient — retried
+        assertFalse(FailureClassifier.isPhysicalFault("Printer is busy (another device is connected to it)."));
+        assertFalse(FailureClassifier.isPhysicalFault("Connection dropped while sending the ticket to the printer."));
+        assertEquals(FailureClassifier.CATEGORY_OFFLINE,
+                FailureClassifier.category("Printer is busy (another device is connected to it)."));
+        assertEquals(FailureClassifier.CATEGORY_MECHANICAL,
+                FailureClassifier.category("Printer mechanical error. Power-cycle the printer."));
+    }
 }

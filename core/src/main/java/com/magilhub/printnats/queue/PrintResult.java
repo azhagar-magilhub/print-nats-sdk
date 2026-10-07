@@ -10,8 +10,16 @@ public final class PrintResult {
         this.message = message;
     }
 
+    /** Start of the success detail of a print the printer itself confirmed (Star LAN: ETB counter moved). */
+    public static final String CONFIRMED_PREFIX = "Printed - confirmed";
+
     public static PrintResult success() {
         return new PrintResult(PrintOutcome.SUCCESS, null);
+    }
+
+    /** Success with a detail for the status event, e.g. "Printed - confirmed by printer in 4810ms". */
+    public static PrintResult success(String detail) {
+        return new PrintResult(PrintOutcome.SUCCESS, detail);
     }
 
     /** Classify a legacy-style error message (for adapters that only have a message string). */

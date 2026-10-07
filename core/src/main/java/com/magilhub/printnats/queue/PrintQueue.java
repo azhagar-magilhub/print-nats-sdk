@@ -432,7 +432,8 @@ public final class PrintQueue {
 
         if (result.outcome == PrintOutcome.SUCCESS) {
             if (!relay) breaker(printer.laneKey()).record(PrintOutcome.SUCCESS, System.currentTimeMillis());
-            finish(job, JobStatus.SUCCESS, null, "print completed");
+            // the transport's success detail ("Printed - confirmed by printer in …ms") travels on the status event
+            finish(job, JobStatus.SUCCESS, result.message, "print completed");
             return;
         }
 
