@@ -34,9 +34,19 @@ public final class ReceiptLogoCache {
     private ReceiptLogoCache() {
     }
 
-    /** Logo URL from the restaurant details (media[] entityType LOGO), MerchantApp getImageURL('LOGO'); null if none. */
+    /**
+     * Logo URL for the restaurant: the app's own {@code receiptLogoUrl} when it sends one — the exact URL it puts in
+     * every receipt payload (businessDetails.logo), built on its image host — else derived from media[] (entityType
+     * LOGO), MerchantApp getImageURL('LOGO'); null if none.
+     *
+     * The cache file is keyed by URL, so prefetch must save under the URL a print asks for: deriving it here with a
+     * different host than the app's meant the prefetched copy was never found and a fresh install that went offline
+     * before its first online print printed no logo.
+     */
     public static String urlFrom(JsonObject restaurant) {
         if (restaurant == null) return null;
+        String given = str(restaurant, "receiptLogoUrl");
+        if (given != null && !given.trim().isEmpty()) return given.trim();
         JsonElement m = restaurant.get("media");
         if (m == null || !m.isJsonArray()) return null;
         JsonArray media = m.getAsJsonArray();
