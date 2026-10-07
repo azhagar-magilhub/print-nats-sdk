@@ -109,6 +109,20 @@ public final class PrintQueue {
         this.relayPolicy = p;
     }
 
+    /** Start of the reason of a relay job that gave up waiting for the master (see {@link #setRelayMaxWaitMs}). */
+    public static final String RELAY_GAVE_UP_PREFIX = "Master device unreachable";
+
+    private volatile long relayMaxWaitMs;
+
+    /**
+     * How long a relay job may wait for the master, counted from when the job was created. 0 (default) = it waits and
+     * retries indefinitely. Past the limit the job FAILS ("Master device unreachable …") instead of retrying on —
+     * a ticket that would reach the kitchen that late is for a person to decide (manual Retry gives it one attempt).
+     */
+    public void setRelayMaxWaitMs(long ms) {
+        this.relayMaxWaitMs = Math.max(0, ms);
+    }
+
     public void addListener(JobListener l) {
         listeners.add(l);
     }
@@ -438,6 +452,16 @@ public final class PrintQueue {
         }
 
         RetryPolicy policy = relay ? relayPolicy : job.kind == JobKind.RECEIPT ? receiptPolicy : kotPolicy;
+        long maxWait = relayMaxWaitMs;
+        if (relay && maxWait > 0 && result.outcome == PrintOutcome.CONNECTION_FAILED
+                && System.currentTimeMillis() - job.createdAt >= maxWait) {
+            long minutes = Math.max(1, Math.round(maxWait / 60000.0));
+            log.append("print_", "Info:: Relay gave up waiting for the master :: Order=" + job.orderNo + " Job=" + job.jobId
+                    + " waitedMs=" + (System.currentTimeMillis() - job.createdAt));
+            fail(job, new PrintResult(PrintOutcome.FAULT, RELAY_GAVE_UP_PREFIX + " for " + minutes
+                    + " min. The ticket was not sent to the kitchen."));
+            return;
+        }
         if (policy.shouldRetry(job.retries, result.outcome)) {
             final int nextAttempt = job.retries + 1;
             job.retries = nextAttempt;

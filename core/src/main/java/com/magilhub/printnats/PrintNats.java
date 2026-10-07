@@ -235,6 +235,7 @@ public final class PrintNats {
         final com.magilhub.printnats.pipeline.PrintRelay relayRef = relay;
         final NatsClient natsRef = nats;
         final String subjectRef = relaySubject;
+        queue.setRelayMaxWaitMs(b.relayMaxWaitMs);
         queue.setRelayTransport(new com.magilhub.printnats.transport.RelayTransport(
                 new com.magilhub.printnats.transport.RelayTransport.Link() {
                     @Override
@@ -256,7 +257,7 @@ public final class PrintNats {
                     public byte[] printLocally(byte[] body) {
                         return relayRef.handle(body);
                     }
-                }, com.magilhub.printnats.transport.RelayTransport.DEFAULT_TIMEOUT_MS, log));
+                }, com.magilhub.printnats.transport.RelayTransport.DEFAULT_TIMEOUT_MS, log, b.relayWaitsForMaster));
         // Every master answers relays (even hosts that don't relay themselves); subscribed only while master.
         if (nats != null) {
             nats.serveWhileMaster(relaySubject, new NatsClient.RequestHandler() {
@@ -973,6 +974,8 @@ public final class PrintNats {
 
         private boolean suppressNatsKotAfterHostPrint;
         private boolean relayToMaster;
+        private boolean relayWaitsForMaster;
+        private long relayMaxWaitMs;
         private com.magilhub.printnats.pipeline.RelayOrderHook relayOrderHook;
 
         /**
@@ -980,6 +983,21 @@ public final class PrintNats {
          * the order to the master over NATS (durable relay job, retried until the master takes it). Default false
          * (MerchantApp: clients' KOTs reach the master via the backend).
          */
+        /**
+         * A client that cannot reach the master at all keeps its KOTs waiting for the master instead of printing them
+         * on its own kitchen printers (the default). See {@link com.magilhub.printnats.transport.RelayTransport}.
+         */
+        public Builder relayWaitsForMaster(boolean wait) {
+            this.relayWaitsForMaster = wait;
+            return this;
+        }
+
+        /** How long a relayed KOT may wait for the master before it fails (0 = indefinitely). See PrintQueue. */
+        public Builder relayMaxWaitMs(long ms) {
+            this.relayMaxWaitMs = ms;
+            return this;
+        }
+
         public Builder relayToMaster(boolean relay) {
             this.relayToMaster = relay;
             return this;

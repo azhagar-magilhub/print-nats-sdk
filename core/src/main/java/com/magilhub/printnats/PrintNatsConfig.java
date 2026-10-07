@@ -41,6 +41,10 @@ public final class PrintNatsConfig {
     public boolean suppressNatsKotAfterHostPrint;
     /** See PrintNats.Builder#relayToMaster (maghilOrder: true). */
     public boolean relayToMaster;
+    /** See PrintNats.Builder#relayWaitsForMaster (maghilOrder: true). */
+    public boolean relayWaitsForMaster;
+    /** See PrintNats.Builder#relayMaxWaitMs (maghilOrder: 3 minutes). */
+    public long relayMaxWaitMs;
     /** Printer IPs found by MAC rediscovery that the backend device list doesn't reflect yet. */
     public com.magilhub.printnats.discovery.IpOverrides ipOverrides;
 
@@ -81,6 +85,8 @@ public final class PrintNatsConfig {
         if (nats != null && nats.serverUrls != null && !nats.serverUrls.isEmpty()) b.nats(nats);
         b.suppressNatsKotAfterHostPrint(suppressNatsKotAfterHostPrint);
         b.relayToMaster(relayToMaster);
+        b.relayWaitsForMaster(relayWaitsForMaster);
+        b.relayMaxWaitMs(relayMaxWaitMs);
         return b;
     }
 }

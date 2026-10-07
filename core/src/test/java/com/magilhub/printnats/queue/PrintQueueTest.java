@@ -301,4 +301,43 @@ public class PrintQueueTest {
         awaitStatus("R1", JobStatus.FAILED);
         assertEquals("initial + 5 receipt retries", 6, transport.sent.size());
     }
+
+    // ---- relay: how long a KOT waits for the master ----
+
+    private void relayAlwaysWaiting(final java.util.concurrent.atomic.AtomicInteger attempts) {
+        queue.setRelayPolicy(new RetryPolicy(Integer.MAX_VALUE, 20, true, true, 20));
+        queue.setRelayTransport(new com.magilhub.printnats.spi.PrinterTransport() {
+            @Override
+            public PrintResult send(PrinterConfig printer, byte[] data) {
+                attempts.incrementAndGet();
+                return new PrintResult(PrintOutcome.CONNECTION_FAILED, "Waiting for master device");
+            }
+        });
+    }
+
+    @Test
+    public void relayGivesUpAfterTheMaxWaitAndStopsRetrying() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        relayAlwaysWaiting(attempts);
+        queue.setRelayMaxWaitMs(150);
+        queue.enqueue(job("R1", PrinterConfig.RELAY_MASTER_ID));
+        awaitStatus("R1", JobStatus.FAILED);
+        PrintJob j = store.get("R1");
+        assertTrue(j.reason, j.reason.startsWith(PrintQueue.RELAY_GAVE_UP_PREFIX));
+        assertEquals(FailureClassifier.CATEGORY_OFFLINE, j.category);
+        assertTrue("it waited — more than one attempt", attempts.get() > 1);
+        int after = attempts.get();
+        Thread.sleep(150);
+        assertEquals("no retry once it gave up", after, attempts.get());
+    }
+
+    @Test
+    public void relayWaitsOnWithoutAMaxWait() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger attempts = new java.util.concurrent.atomic.AtomicInteger();
+        relayAlwaysWaiting(attempts);
+        queue.enqueue(job("R2", PrinterConfig.RELAY_MASTER_ID));
+        Thread.sleep(300);
+        assertEquals(JobStatus.PENDING, store.get("R2").status);
+        assertTrue(attempts.get() > 3);
+    }
 }

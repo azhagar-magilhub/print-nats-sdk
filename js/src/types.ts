@@ -108,6 +108,18 @@ export interface PrintNatsConfig {
    * "Waiting for master device". Default false (MerchantApp).
    */
   relayToMaster?: boolean;
+  /**
+   * With relayToMaster: a client that cannot reach the master at all keeps its KOTs waiting ("Waiting for master
+   * device") instead of printing them on its own kitchen printers. Default false (print locally, so a KOT never
+   * waits). Set it where only the master may print and number KOTs.
+   */
+  relayWaitsForMaster?: boolean;
+  /**
+   * How long a relayed KOT may wait for the master, from when it was created. Past it the job fails with a reason
+   * starting "Master device unreachable" instead of retrying on (manual retry then gives it one attempt).
+   * Default 0: wait and retry indefinitely.
+   */
+  relayMaxWaitMs?: number;
 }
 
 export type RelayKind = 'KOT' | 'EDIT_KOT' | 'RECEIPT';

@@ -19,9 +19,16 @@ import java.nio.charset.StandardCharsets;
  *       (auto-retried indefinitely by {@code RetryPolicy.relay()});</li>
  *   <li>reply {@code {ok:false, error}} → FAULT with the master's error (Failed Print Queue, manual retry).</li>
  * </ul>
- * If this device has meanwhile become the master, or it has no NATS connection (no internet, modem off), the request
- * is printed here instead, on the kitchen printers this device reaches over LAN — the same path the master uses for
- * incoming relays — so KOTs never wait for the internet.
+ * If this device has meanwhile become the master, the request is printed here instead — the same path the master
+ * uses for incoming relays.
+ *
+ * <p>With no NATS connection at all (the master's server is out of reach) there are two behaviours:
+ * <ul>
+ *   <li>default: print here, on the kitchen printers this device reaches over LAN, so a KOT never waits;</li>
+ *   <li>{@code waitForMaster}: keep waiting ("Waiting for master device", retried until the master answers). For a
+ *       shop where only the master may print and number KOTs — a ticket printed by a client would carry no KOT
+ *       number and could come out a second time once the master is back.</li>
+ * </ul>
  */
 public final class RelayTransport implements PrinterTransport {
     public static final String WAITING_FOR_MASTER = "Waiting for master device";
@@ -44,8 +51,15 @@ public final class RelayTransport implements PrinterTransport {
     private final Link link;
     private final long timeoutMs;
     private final LogSink log;
+    private final boolean waitForMaster;
 
     public RelayTransport(Link link, long timeoutMs, LogSink log) {
+        this(link, timeoutMs, log, false);
+    }
+
+    /** {@code waitForMaster}: with no connection, wait for the master instead of printing on this device. */
+    public RelayTransport(Link link, long timeoutMs, LogSink log, boolean waitForMaster) {
+        this.waitForMaster = waitForMaster;
         this.link = link;
         this.timeoutMs = timeoutMs;
         this.log = log == null ? LogSink.NONE : log;
@@ -54,7 +68,12 @@ public final class RelayTransport implements PrinterTransport {
     @Override
     public PrintResult send(PrinterConfig printer, byte[] data) {
         boolean master = link.isMaster();
-        boolean offline = !master && !link.isOnline();
+        boolean disconnected = !master && !link.isOnline();
+        if (disconnected && waitForMaster) {
+            log.append("print_", "Info:: No connection to the master — relayed KOT kept waiting (not printed on this device)");
+            return new PrintResult(PrintOutcome.CONNECTION_FAILED, WAITING_FOR_MASTER);
+        }
+        boolean offline = disconnected;
         boolean local = master || offline;
         if (offline) log.append("print_", "Info:: No NATS connection — relayed KOT printed on this device's printers");
         byte[] reply;
