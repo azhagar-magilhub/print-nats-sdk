@@ -137,6 +137,34 @@ public class DurableConsumersIT {
     }
 
     @Test
+    public void eventConsumerOptionsAndMessageId() throws Exception {
+        // the shape the app uses on the backend's event stream: new messages only, 60 s ack wait, 5 deliveries, backoff
+        NatsClient client = start();
+        DurableOptions o = new DurableOptions();
+        o.deliverNew = true;
+        o.maxDeliver = 5;
+        o.backoffMs = new long[]{30_000, 60_000, 120_000, 300_000};
+        o.ackWaitMs = 60_000;
+        client.publishDurable(SUBJECT, b("before"), "evt-old"); // before the consumer exists → not delivered
+        client.startDurable(STREAM, "D1-menu", SUBJECT, o, collect);
+        client.publishDurable(SUBJECT, b("menu"), "evt-menu");
+
+        DurableMessage m = received.poll(5, TimeUnit.SECONDS);
+        assertNotNull(m);
+        assertEquals("menu", new String(m.data, StandardCharsets.UTF_8));
+        assertEquals("evt-menu", m.msgId);
+        assertTrue(client.ackDurable(m.token));
+        assertNull("nothing older is replayed", received.poll(500, TimeUnit.MILLISECONDS));
+
+        assertEquals(2, streamCount());
+        io.nats.client.api.ConsumerConfiguration cc =
+                be.jetStreamManagement().getConsumerInfo(STREAM, "D1-menu").getConsumerConfiguration();
+        assertEquals(5, cc.getMaxDeliver());
+        assertEquals(4, cc.getBackoff().size());
+        assertEquals(io.nats.client.api.DeliverPolicy.New, cc.getDeliverPolicy());
+    }
+
+    @Test
     public void redeliveredUntilAcked() throws Exception {
         NatsClient client = start();
         client.startDurable(STREAM, "offsync-D1", SUBJECT, collect);

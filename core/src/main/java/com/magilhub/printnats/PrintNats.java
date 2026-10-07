@@ -66,6 +66,8 @@ public final class PrintNats {
     private com.magilhub.printnats.nats.LanBeacon beacon;
     /** LAN mode, master only: the cloud connection (PRINTKOT + forwarding status to the cloud). */
     private final NatsClient cloud;
+    /** LAN mode, client only: an events-only cloud connection (the backend's event stream). */
+    private final NatsClient events;
     static final String STATUS_BRIDGE_DURABLE = "statusbridge";
     private final PrintQueue queue;
     private final PrintPipeline pipeline;
@@ -181,6 +183,30 @@ public final class PrintNats {
             public void onAppMessage(String subject, byte[] data) {
             }
         }, log, b.cloudOutboxStore);
+        this.events = b.natsConfig == null || !b.natsConfig.lanMode || this.cloud != null
+                || b.natsConfig.eventServerUrls == null || b.natsConfig.eventServerUrls.isEmpty() ? null
+                : new NatsClient(b.natsConfig.eventsCopy(), new com.magilhub.printnats.nats.NatsEvents() {
+            @Override
+            public void onPrintMessage(com.magilhub.printnats.nats.InboundMessage message) {
+            }
+
+            @Override
+            public void onStatusEvent(String subject, byte[] data) {
+            }
+
+            @Override
+            public void onStatusHistoryEvent(String subject, byte[] data) {
+            }
+
+            @Override
+            public void onConnectionEvent(String type, String detail) {
+                holder.pipeline.onConnectionEvent("events_" + type, detail);
+            }
+
+            @Override
+            public void onAppMessage(String subject, byte[] data) {
+            }
+        }, log);
         this.status = new StatusPublisher(nats == null ? new NatsClient(new NatsConfig(), null, log) : nats, lookup, log,
                 b.deviceState, b.session.locationId, b.session.deviceId);
         holder.queue = queue;
@@ -314,6 +340,7 @@ public final class PrintNats {
             cloud.start();
             startStatusBridge();
         }
+        if (events != null) events.start();
     }
 
     /**
@@ -375,6 +402,7 @@ public final class PrintNats {
     public void stop() {
         if (beacon != null) beacon.stop();
         beacon = null;
+        if (events != null) events.stop();
         if (cloud != null) cloud.stop();
         if (nats != null) nats.stop();
         pipeline.shutdown();
@@ -837,6 +865,73 @@ public final class PrintNats {
 
     public boolean termDurable(String token) {
         return nats != null && nats.termDurable(token);
+    }
+
+    // ---- backend events (menu update, "send your logs") on the cloud's event stream ---------------------
+
+    /**
+     * The connection that reaches the cloud's event stream: the only connection outside LAN mode, the master's cloud
+     * connection in LAN mode, a client's events-only connection. Null when this device has no way to the cloud
+     * (a LAN client configured without {@link NatsConfig#eventServerUrls}).
+     */
+    private NatsClient eventsClient() {
+        NatsConfig c = natsConfig();
+        if (c == null) return null;
+        if (!c.lanMode) return nats;
+        return cloud != null ? cloud : events;
+    }
+
+    private NatsConfig natsConfig() {
+        return nats == null ? null : nats.config();
+    }
+
+    /** Name of the backend's event stream (see {@link NatsConfig#eventStreamName}). */
+    public String eventStream() {
+        NatsConfig c = natsConfig();
+        return c == null ? "MAGHIL_NATS_EVENT" : c.eventStreamName;
+    }
+
+    /** This device can reach the cloud's event stream right now. */
+    public boolean eventsConnected() {
+        NatsClient c = eventsClient();
+        return c != null && c.isConnected();
+    }
+
+    /**
+     * Durable consumer on the event stream (the backend owns the stream — it is never created here). Same contract as
+     * {@link #startDurable}: explicit ack, kept across reconnects, bound on the next connect when the cloud is away.
+     */
+    public void startEventDurable(String durable, String filterSubject, com.magilhub.printnats.nats.DurableOptions options,
+                                  com.magilhub.printnats.nats.DurableHandler handler) throws Exception {
+        NatsClient c = eventsClient();
+        if (c == null) throw new IllegalStateException("no connection to the cloud event stream");
+        c.startDurable(eventStream(), durable, filterSubject, options, handler);
+    }
+
+    public void stopEventDurable(String durable) {
+        NatsClient c = eventsClient();
+        if (c != null) c.stopDurable(durable);
+    }
+
+    public boolean ackEvent(String token) {
+        NatsClient c = eventsClient();
+        return c != null && c.ackDurable(token);
+    }
+
+    public boolean nakEvent(String token, long delayMs) {
+        NatsClient c = eventsClient();
+        return c != null && c.nakDurable(token, delayMs);
+    }
+
+    /**
+     * Report this device's status on the event stream ({@code maghilNatsEvent.<loc>.devstatus.<dev>}): JetStream
+     * publish, confirmed, kept and re-sent after a reconnect. False when it could not be handed over at all.
+     */
+    public boolean publishDeviceStatus(byte[] json) {
+        NatsClient c = eventsClient();
+        NatsConfig cfg = natsConfig();
+        if (c == null || cfg == null || cfg.locationId == null || cfg.deviceId == null) return false;
+        return c.publish(cfg.deviceStatusSubject(), json);
     }
 
     /** null when the consumer doesn't exist. */

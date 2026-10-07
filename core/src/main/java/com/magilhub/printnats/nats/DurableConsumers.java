@@ -80,6 +80,8 @@ final class DurableConsumers {
         final String filterSubject;
         /** true: a consumer created for this registration starts at the stream tail (DeliverPolicy.New). */
         final boolean deliverNew;
+        /** Creation settings (see {@link DurableOptions}); never null. */
+        final DurableOptions options;
         volatile DurableHandler handler;
         JetStreamSubscription sub;
         Dispatcher subDispatcher;
@@ -88,11 +90,12 @@ final class DurableConsumers {
         /** token → message, oldest first; bounded (evicted = left unacked → redelivered). */
         final LinkedHashMap<String, Message> pending = new LinkedHashMap<>();
 
-        Durable(String stream, String name, String filterSubject, boolean deliverNew, DurableHandler handler) {
+        Durable(String stream, String name, String filterSubject, DurableOptions options, DurableHandler handler) {
             this.stream = stream;
             this.name = name;
             this.filterSubject = filterSubject;
-            this.deliverNew = deliverNew;
+            this.options = options == null ? new DurableOptions() : options;
+            this.deliverNew = this.options.deliverNew;
             this.handler = handler;
         }
 
@@ -259,6 +262,12 @@ final class DurableConsumers {
      */
     void startDurable(String stream, String name, String filterSubject, boolean deliverNew, DurableHandler handler)
             throws IOException, JetStreamApiException {
+        startDurable(stream, name, filterSubject, DurableOptions.deliverNew(deliverNew), handler);
+    }
+
+    /** As above, with the consumer's creation settings (max deliveries, redelivery backoff, ack wait). */
+    void startDurable(String stream, String name, String filterSubject, DurableOptions options, DurableHandler handler)
+            throws IOException, JetStreamApiException {
         if (stream == null || stream.isEmpty() || name == null || name.isEmpty() || filterSubject == null
                 || filterSubject.isEmpty() || handler == null) {
             throw new IllegalArgumentException("stream, durable, filterSubject and handler are required");
@@ -274,7 +283,7 @@ final class DurableConsumers {
                 if (d.sub != null || connection == null) return;
             } else {
                 if (d != null) unsubscribe(d);
-                d = new Durable(stream, name, filterSubject, deliverNew, handler);
+                d = new Durable(stream, name, filterSubject, options, handler);
                 durables.put(name, d);
                 if (connection == null) return;
             }
@@ -360,16 +369,23 @@ final class DurableConsumers {
 
     private void createConsumer(Connection nc, Durable d, String deliverSubject, String deliverGroup,
                                 DeliverPolicy policy) throws IOException, JetStreamApiException {
-        nc.jetStreamManagement().addOrUpdateConsumer(d.stream, ConsumerConfiguration.builder()
+        DurableOptions o = d.options;
+        ConsumerConfiguration.Builder b = ConsumerConfiguration.builder()
                 .durable(d.name)
                 .deliverSubject(deliverSubject)
                 .deliverGroup(deliverGroup)
                 .filterSubject(d.filterSubject)
                 .deliverPolicy(policy)
                 .ackPolicy(AckPolicy.Explicit)
-                .ackWait(Duration.ofMillis(config.durableAckWaitMs))
-                .maxAckPending(config.durableMaxAckPending)
-                .build());
+                .ackWait(Duration.ofMillis(o.ackWaitMs > 0 ? o.ackWaitMs : config.durableAckWaitMs))
+                .maxAckPending(config.durableMaxAckPending);
+        if (o.maxDeliver > 0) b.maxDeliver(o.maxDeliver);
+        if (o.backoffMs != null && o.backoffMs.length > 0) {
+            Duration[] steps = new Duration[o.backoffMs.length];
+            for (int i = 0; i < steps.length; i++) steps[i] = Duration.ofMillis(o.backoffMs[i]);
+            b.backoff(steps);
+        }
+        nc.jetStreamManagement().addOrUpdateConsumer(d.stream, b.build());
     }
 
     private void deliver(Durable d, long gen, Message msg) {
@@ -395,7 +411,14 @@ final class DurableConsumers {
         boolean taken;
         try {
             DurableHandler h = d.handler;
-            taken = h != null && h.onMessage(new DurableMessage(token, d.name, msg.getSubject(), msg.getData(), streamSeq, delivered));
+            String msgId = null;
+            try {
+                if (msg.hasHeaders()) msgId = msg.getHeaders().getFirst("Nats-Msg-Id");
+            } catch (Throwable ignored) {
+                // no headers
+            }
+            taken = h != null && h.onMessage(
+                    new DurableMessage(token, d.name, msg.getSubject(), msg.getData(), streamSeq, delivered, msgId));
         } catch (Throwable t) {
             events.emit("durable_handler_error", d.name + ": " + t);
             taken = false;

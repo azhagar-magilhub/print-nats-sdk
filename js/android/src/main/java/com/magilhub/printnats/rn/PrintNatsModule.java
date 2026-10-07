@@ -8,6 +8,7 @@ import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableArray;
+import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.WritableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
@@ -39,6 +40,7 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     static final String EVENT_APP_MESSAGE = "PrintNatsAppMessage";
     static final String EVENT_RELAY_ORDER = "PrintNatsRelayOrder";
     static final String EVENT_DURABLE = "PrintNatsDurableMessage";
+    static final String EVENT_BACKEND_EVENT = "PrintNatsEventMessage";
     /** How long a relayed order waits for JS (e.g. KOT number assignment) before printing the original. */
     static final long RELAY_ORDER_TIMEOUT_MS = 3000;
 
@@ -633,6 +635,100 @@ public class PrintNatsModule extends ReactContextBaseJavaModule {
     public void stopDurable(String durable, Promise promise) {
         PrintNatsAndroid.stopDurable(context, durable);
         promise.resolve(null);
+    }
+
+    // ---- backend event stream (menu update, "send your logs") ----
+
+    /** JS registered onEventMessage — without a listener event messages are left unacked (redelivered later). */
+    private volatile boolean eventHandlerActive;
+
+    private final com.magilhub.printnats.nats.DurableHandler eventHandler = new com.magilhub.printnats.nats.DurableHandler() {
+        @Override
+        public boolean onMessage(com.magilhub.printnats.nats.DurableMessage msg) {
+            if (!eventHandlerActive || !context.hasActiveCatalystInstance()) return false;
+            WritableMap m = Arguments.createMap();
+            m.putString("token", msg.token);
+            m.putString("durable", msg.durable);
+            m.putString("subject", msg.subject);
+            m.putString("data", new String(msg.data, StandardCharsets.UTF_8));
+            if (msg.msgId != null) m.putString("messageId", msg.msgId);
+            m.putDouble("streamSeq", msg.streamSeq);
+            m.putDouble("deliveredCount", msg.deliveredCount);
+            try {
+                context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit(EVENT_BACKEND_EVENT, m);
+                return true;
+            } catch (Throwable t) {
+                return false;
+            }
+        }
+    };
+
+    /** options: {deliverPolicy?: 'all'|'new', maxDeliver?, backoffMs?: number[], ackWaitMs?} */
+    @ReactMethod
+    public void startEventDurable(final String durable, final String filterSubject, final ReadableMap options,
+                                  final Promise promise) {
+        final com.magilhub.printnats.nats.DurableOptions o = new com.magilhub.printnats.nats.DurableOptions();
+        if (options != null) {
+            o.deliverNew = options.hasKey("deliverPolicy") && "new".equals(options.getString("deliverPolicy"));
+            if (options.hasKey("maxDeliver")) o.maxDeliver = (int) options.getDouble("maxDeliver");
+            if (options.hasKey("ackWaitMs")) o.ackWaitMs = (long) options.getDouble("ackWaitMs");
+            if (options.hasKey("backoffMs") && options.getArray("backoffMs") != null) {
+                ReadableArray a = options.getArray("backoffMs");
+                o.backoffMs = new long[a.size()];
+                for (int i = 0; i < a.size(); i++) o.backoffMs[i] = (long) a.getDouble(i);
+            }
+        }
+        io("E_EVENT_DURABLE", promise, new Io() {
+            @Override
+            public Object run() throws Exception {
+                PrintNatsAndroid.startEventDurable(context, durable, filterSubject, o, eventHandler);
+                return null;
+            }
+        });
+    }
+
+    @ReactMethod
+    public void stopEventDurable(String durable, Promise promise) {
+        PrintNatsAndroid.stopEventDurable(context, durable);
+        promise.resolve(null);
+    }
+
+    /** JS onEventMessage registered (true) / removed (false). */
+    @ReactMethod
+    public void setEventHandlerActive(boolean active) {
+        eventHandlerActive = active;
+    }
+
+    @ReactMethod
+    public void ackEvent(String token, Promise promise) {
+        PrintNats s = PrintNatsAndroid.get(context);
+        if (s != null) s.ackEvent(token);
+        promise.resolve(null);
+    }
+
+    @ReactMethod
+    public void nakEvent(String token, double delayMs, Promise promise) {
+        PrintNats s = PrintNatsAndroid.get(context);
+        if (s != null) s.nakEvent(token, (long) Math.max(0, delayMs));
+        promise.resolve(null);
+    }
+
+    /** This device's status report on the event stream. Resolves true when the server confirmed it now. */
+    @ReactMethod
+    public void publishDeviceStatus(final String json, final Promise promise) {
+        io("E_DEVICE_STATUS", promise, new Io() {
+            @Override
+            public Object run() {
+                PrintNats s = PrintNatsAndroid.get(context);
+                return s != null && s.publishDeviceStatus(json.getBytes(StandardCharsets.UTF_8));
+            }
+        });
+    }
+
+    @ReactMethod
+    public void eventsConnected(Promise promise) {
+        PrintNats s = PrintNatsAndroid.get(context);
+        promise.resolve(s != null && s.eventsConnected());
     }
 
     /** JS onDurableMessage registered (true) / removed (false). */

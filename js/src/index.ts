@@ -258,6 +258,15 @@ export const PrintNats: PrintNatsApi = {
     await call('durable/stop', { durable });
   },
   onDurableMessage: (cb: (m: DurableMessage) => void) => listen('durable', cb),
+  // The backend event stream is not served by the web sidecar: menu updates and log requests keep arriving over the
+  // socket there. Registering is a no-op so shared app code can call it unconditionally.
+  startEventDurable: async () => undefined,
+  stopEventDurable: async () => undefined,
+  onEventMessage: () => () => undefined,
+  ackEvent: async () => undefined,
+  nakEvent: async () => undefined,
+  publishDeviceStatus: async () => false,
+  eventsConnected: async () => false,
   ackDurable: async (token: string) => {
     await call('durable/ack', { token });
   },

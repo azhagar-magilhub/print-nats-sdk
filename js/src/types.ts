@@ -43,6 +43,13 @@ export interface NatsSettings {
   /** LAN mode master: this device's lease epoch, announced by UDP beacon (port 41222); the highest epoch wins. Every
    *  LAN device reports the masters it hears as connection event `lan_master` {deviceId, epoch, ip, port}. */
   lanEpoch?: number;
+  /**
+   * LAN mode, client only: cloud URL(s) for the backend's event stream (menu update, "send your logs"). The client
+   * opens a second, events-only connection, so it hears a menu update itself and reports its own sync status even
+   * out of the master's reach. Omit on the master and outside LAN mode (the cloud connection is used).
+   */
+  eventServerUrls?: string;
+  eventAuthToken?: string;
 }
 
 export interface LanStatus {
@@ -209,6 +216,24 @@ export interface DurableMessage {
   deliveredCount: number;
 }
 
+/** A message from the backend's event stream (startEventDurable). Settle it with ackEvent / nakEvent. */
+export interface EventMessage extends DurableMessage {
+  /** The publisher's Nats-Msg-Id, when the message has one. */
+  messageId?: string;
+}
+
+export interface EventDurableOptions {
+  /** Consumer name, e.g. `<deviceId>-menu`. */
+  durable: string;
+  /** e.g. `maghilNatsEvent.<locationId>.menu` */
+  filterSubject: string;
+  /** Applied when the consumer is created; an existing consumer keeps its own settings. */
+  deliverPolicy?: 'all' | 'new';
+  maxDeliver?: number;
+  backoffMs?: number[];
+  ackWaitMs?: number;
+}
+
 export interface DurableOptions {
   stream: string;
   /** Consumer name: no '.', '*', '>' or spaces. */
@@ -328,6 +353,26 @@ export interface PrintNatsApi {
   startDurable(opts: DurableOptions): Promise<void>;
   /** Stop receiving; the consumer and its ack floor stay on the server. */
   stopDurable(durable: string): Promise<void>;
+
+  // ---- backend event stream (MAGHIL_NATS_EVENT: menu update, "send your logs") ----
+  /**
+   * Durable consumer on the backend's event stream, on whichever connection reaches the cloud (the only connection
+   * outside LAN mode; the master's cloud connection; a LAN client's events-only connection — see
+   * NatsSettings.eventServerUrls). The stream is never created here. Kept across reconnects and SDK rebuilds.
+   */
+  startEventDurable(opts: EventDurableOptions): Promise<void>;
+  stopEventDurable(durable: string): Promise<void>;
+  /** With no listener, event messages stay unacked and are redelivered. */
+  onEventMessage(cb: (m: EventMessage) => void): Unsubscribe;
+  ackEvent(token: string): Promise<void>;
+  nakEvent(token: string, delayMs?: number): Promise<void>;
+  /**
+   * Report this device's status on the event stream (`maghilNatsEvent.<loc>.devstatus.<dev>`), confirmed by the
+   * server; kept and re-sent after a reconnect. Resolves true when it was confirmed now.
+   */
+  publishDeviceStatus(json: string): Promise<boolean>;
+  /** This device can reach the cloud's event stream right now. */
+  eventsConnected(): Promise<boolean>;
   onDurableMessage(cb: (m: DurableMessage) => void): Unsubscribe;
   ackDurable(token: string): Promise<void>;
   /** Redeliver after delayMs (default: now). */

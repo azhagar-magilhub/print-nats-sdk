@@ -1,7 +1,7 @@
 // React Native (Android): bridge to com.magilhub.printnats.rn.PrintNatsModule.
 import { NativeEventEmitter, NativeModules } from 'react-native';
 import {
-  AppMessage, ConnectionEvent, DurableMessage, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig,
+  AppMessage, ConnectionEvent, DurableMessage, EventMessage, IpOverrides, JobEvent, PrintJob, PrinterAddressEvent, PrintNatsApi, PrintNatsConfig, PrinterConfig,
   RelayOrderHandler, Session, StatusEvent, Unsubscribe,
 } from './types';
 
@@ -22,6 +22,8 @@ function listen<T>(name: string, map: (raw: any) => T, cb: (e: T) => void): Unsu
   return () => sub.remove();
 }
 
+/** onEventMessage listeners; native hands event messages to JS only while > 0. */
+let eventListeners = 0;
 /** onDurableMessage listeners; native hands messages to JS only while > 0 (else they stay unacked). */
 let durableListeners = 0;
 
@@ -159,6 +161,48 @@ export const PrintNats: PrintNatsApi = {
   async ackDurable(token) {
     await requireNative().ackDurable(token);
   },
+  async startEventDurable({ durable, filterSubject, deliverPolicy, maxDeliver, backoffMs, ackWaitMs }) {
+    const options: Record<string, unknown> = { deliverPolicy: deliverPolicy ?? 'all' };
+    if (maxDeliver != null) options.maxDeliver = maxDeliver;
+    if (backoffMs != null) options.backoffMs = backoffMs;
+    if (ackWaitMs != null) options.ackWaitMs = ackWaitMs;
+    await requireNative().startEventDurable(durable, filterSubject, options);
+  },
+  async stopEventDurable(durable) {
+    await requireNative().stopEventDurable(durable);
+  },
+  onEventMessage(cb: (m: EventMessage) => void): Unsubscribe {
+    if (!emitter || !Native) return () => undefined;
+    const sub = emitter.addListener('PrintNatsEventMessage', (raw: any) =>
+      cb({
+        token: raw.token,
+        durable: raw.durable,
+        subject: raw.subject,
+        data: raw.data,
+        messageId: raw.messageId ?? undefined,
+        streamSeq: raw.streamSeq,
+        deliveredCount: raw.deliveredCount,
+      }),
+    );
+    eventListeners += 1;
+    Native.setEventHandlerActive?.(true);
+    let removed = false;
+    return () => {
+      if (removed) return;
+      removed = true;
+      sub.remove();
+      eventListeners -= 1;
+      if (eventListeners === 0) Native.setEventHandlerActive?.(false);
+    };
+  },
+  async ackEvent(token) {
+    await requireNative().ackEvent(token);
+  },
+  async nakEvent(token, delayMs = 0) {
+    await requireNative().nakEvent(token, delayMs);
+  },
+  publishDeviceStatus: (json) => requireNative().publishDeviceStatus(json),
+  eventsConnected: () => requireNative().eventsConnected(),
   async nakDurable(token, delayMs = 0) {
     await requireNative().nakDurable(token, delayMs);
   },

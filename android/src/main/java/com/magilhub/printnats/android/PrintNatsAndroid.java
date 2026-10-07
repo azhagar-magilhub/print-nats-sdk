@@ -95,6 +95,44 @@ public final class PrintNatsAndroid {
         if (s != null) s.stopDurable(durable);
     }
 
+    // ---- backend event stream (menu update, "send your logs") ----
+    private static final class EventDurableSpec {
+        final String filterSubject;
+        final com.magilhub.printnats.nats.DurableOptions options;
+        final com.magilhub.printnats.nats.DurableHandler handler;
+
+        EventDurableSpec(String filterSubject, com.magilhub.printnats.nats.DurableOptions options,
+                         com.magilhub.printnats.nats.DurableHandler handler) {
+            this.filterSubject = filterSubject;
+            this.options = options;
+            this.handler = handler;
+        }
+    }
+
+    private static final java.util.Map<String, EventDurableSpec> eventDurables = new java.util.LinkedHashMap<>();
+
+    /** See {@link PrintNats#startEventDurable}; kept across SDK rebuilds (configure / restart). */
+    public static void startEventDurable(Context context, String durable, String filterSubject,
+                                         com.magilhub.printnats.nats.DurableOptions options,
+                                         com.magilhub.printnats.nats.DurableHandler handler) throws Exception {
+        PrintNats s;
+        synchronized (PrintNatsAndroid.class) {
+            eventDurables.put(durable, new EventDurableSpec(filterSubject, options, handler));
+            s = get(context);
+        }
+        if (s == null) throw new IllegalStateException("PrintNats not configured");
+        s.startEventDurable(durable, filterSubject, options, handler);
+    }
+
+    public static void stopEventDurable(Context context, String durable) {
+        PrintNats s;
+        synchronized (PrintNatsAndroid.class) {
+            eventDurables.remove(durable);
+            s = instance;
+        }
+        if (s != null) s.stopEventDurable(durable);
+    }
+
     /** Delete on the server and forget it locally (so a rebuild doesn't re-create it). False when it didn't exist. */
     public static boolean deleteConsumer(Context context, String stream, String durable) throws Exception {
         PrintNats s;
@@ -125,6 +163,14 @@ public final class PrintNatsAndroid {
                 s.startDurable(d.stream, e.getKey(), d.filterSubject, d.deliverNew, d.handler);
             } catch (Exception ignored) {
                 // registered; bound on connect
+            }
+        }
+        for (java.util.Map.Entry<String, EventDurableSpec> e : eventDurables.entrySet()) {
+            try {
+                EventDurableSpec d = e.getValue();
+                s.startEventDurable(e.getKey(), d.filterSubject, d.options, d.handler);
+            } catch (Exception ignored) {
+                // registered when a cloud connection exists; bound on connect
             }
         }
     }

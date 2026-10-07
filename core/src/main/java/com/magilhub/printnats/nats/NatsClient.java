@@ -375,6 +375,12 @@ public final class NatsClient {
         durables.startDurable(stream, durable, filterSubject, deliverNew, handler);
     }
 
+    /** As above, with the consumer's creation settings (max deliveries, redelivery backoff, ack wait). */
+    public void startDurable(String stream, String durable, String filterSubject, DurableOptions options,
+                             DurableHandler handler) throws Exception {
+        durables.startDurable(stream, durable, filterSubject, options, handler);
+    }
+
     /** Stop receiving; the consumer (and its ack floor) stays on the server. */
     public void stopDurable(String durable) {
         durables.stopDurable(durable);

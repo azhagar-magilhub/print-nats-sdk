@@ -36,6 +36,17 @@ public final class NatsConfig {
     public long lanEpoch;
     public int localPort = 4222;
 
+    // ---- backend events (menu update, "send your logs") — a JetStream stream on the CLOUD server ----
+    /** The backend's event stream; the SDK never creates it. */
+    public String eventStreamName = "MAGHIL_NATS_EVENT";
+    /**
+     * LAN-mode client: the cloud NATS URL(s) for the event stream. A client's main connection is the shop's local
+     * server, so it opens this second, events-only connection — every tablet hears a menu update itself and reports
+     * its own sync status, also when it is out of the master's reach. Null elsewhere (the cloud connection is used).
+     */
+    public String eventServerUrls;
+    public String eventAuthToken;
+
     /** Consume the PRINTKOT stream on this connection (false for a LAN-mode local connection). */
     public boolean consumePrintKot = true;
     /** Subscribe to print status (false for the master's cloud connection — status is read from the local server). */
@@ -93,6 +104,29 @@ public final class NatsConfig {
         } catch (Exception e) {
             throw new IllegalStateException("HmacSHA256 unavailable", e);
         }
+    }
+
+    /** Subject of this device's status reports on the event stream: maghilNatsEvent.&lt;loc&gt;.devstatus.&lt;dev&gt;. */
+    public String deviceStatusSubject() {
+        return "maghilNatsEvent." + locationId + ".devstatus." + deviceId;
+    }
+
+    /** Copy for a LAN-mode client's events-only cloud connection: no PRINTKOT, no print status. */
+    public NatsConfig eventsCopy() {
+        NatsConfig c = new NatsConfig();
+        c.serverUrls = eventServerUrls;
+        c.authToken = eventAuthToken;
+        c.locationId = locationId;
+        c.deviceId = deviceId;
+        c.testMode = testMode;
+        c.connectTimeoutMs = connectTimeoutMs;
+        c.reconnectWaitMs = reconnectWaitMs;
+        c.initialBackoffMs = initialBackoffMs;
+        c.maxBackoffMs = maxBackoffMs;
+        c.eventStreamName = eventStreamName;
+        c.consumePrintKot = false;
+        c.subscribeStatus = false;
+        return c;
     }
 
     /** Copy for the master's cloud connection: PRINTKOT + backend ack only. */
