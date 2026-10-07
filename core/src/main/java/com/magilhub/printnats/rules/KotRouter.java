@@ -55,7 +55,8 @@ public final class KotRouter {
         for (JsonElement it : items) {
             if (!it.isJsonObject()) continue;
             String cuisine = Json.str(it.getAsJsonObject(), "cuisineId");
-            if (cuisine == null) continue; // legacy: getPrinterByCuisine(null) matches no printer
+            // legacy: getPrinterByCuisine(null) matches no printer — and neither does an empty station id
+            if (cuisine == null || cuisine.trim().isEmpty()) continue;
             JsonArray group = byCuisine.get(cuisine);
             if (group == null) byCuisine.put(cuisine, group = new JsonArray());
             group.add(it.deepCopy());

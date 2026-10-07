@@ -130,4 +130,39 @@ public class DeviceListTest {
         assertEquals("192.168.1.8", p.get(0).address);
         assertEquals("other rows unchanged", PrinterConfig.Purpose.STATION_KOT, p.get(1).purpose);
     }
+
+    /** The setup that printed every unmapped item on every printer: all KOT printers saved with an empty tag. */
+    static JsonArray emptyTagDevices() {
+        return JsonParser.parseString("["
+                + "{\"id\":\"T1\",\"deviceType\":\"TAB\",\"deviceIdentifier\":\"D1\",\"isDefault\":1},"
+                + "{\"id\":\"KD\",\"deviceType\":\"PRINTER\",\"printTo\":\"ORDER\",\"isDefault\":1,\"deviceIdentifier\":\"192.168.1.50\",\"tagIds\":[\"\"]},"
+                + "{\"id\":\"KU\",\"deviceType\":\"PRINTER\",\"printTo\":\"ORDER\",\"isDefault\":0,\"deviceIdentifier\":\"192.168.1.7\",\"tagIds\":[\"\"]},"
+                + "{\"id\":\"KS\",\"deviceType\":\"PRINTER\",\"printTo\":\"ORDER\",\"isDefault\":0,\"deviceIdentifier\":\"192.168.1.8\",\"tagIds\":[\"\",\"C2\"]}"
+                + "]").getAsJsonArray();
+    }
+
+    @Test
+    public void anEmptyTagIsNotAStation() {
+        List<PrinterConfig> p = DeviceList.printers(emptyTagDevices(), "D1", restaurant());
+        // default printer keeps one master row; the untagged printer gets none; the tagged one only its real tag
+        assertEquals(2, p.size());
+        assertEquals("KD#", p.get(0).id);
+        assertEquals(PrinterConfig.Purpose.MASTER_KOT, p.get(0).purpose);
+        assertNull(p.get(0).cuisineId);
+        assertEquals("KS#C2", p.get(1).id);
+    }
+
+    @Test
+    public void anItemWithNoStationPrintsOnlyOnTheMasterKotPrinter() {
+        List<PrinterConfig> p = DeviceList.printers(emptyTagDevices(), "D1", restaurant());
+        JsonObject payload = JsonParser.parseString("{\"items\":["
+                + "{\"name\":\"Ghee Roast\",\"cuisineId\":\"\",\"masterKOT\":true},"
+                + "{\"name\":\"Beer\",\"cuisineId\":\"C2\",\"masterKOT\":true}]}").getAsJsonObject();
+        List<KotRouter.Ticket> tickets = KotRouter.route(payload, p);
+        assertEquals(2, tickets.size());
+        assertEquals("KD#", tickets.get(0).printer.id); // master: both items
+        assertEquals(2, tickets.get(0).payload.getAsJsonArray("items").size());
+        assertEquals("KS#C2", tickets.get(1).printer.id); // station: only its item
+        assertEquals(1, tickets.get(1).payload.getAsJsonArray("items").size());
+    }
 }

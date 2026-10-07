@@ -53,8 +53,23 @@ public final class DeviceList {
             if (!"ORDER".equals(Json.str(d, "printTo")) || !"PRINTER".equals(Json.str(d, "deviceType"))) continue;
             JsonArray tags = Json.arr(d, "tagIds");
             if (tags == null) continue; // a KOT printer without tags gets no row (legacy)
+            // An EMPTY tag is "no station", not a station of its own. It used to become a station row with cuisineId ""
+            // — and an item that is mapped to no station also carries cuisineId "", so the two matched and every
+            // untagged printer printed every unmapped item. Now only the default (master) KOT printer keeps a row
+            // for an empty tag (it prints by masterKOT, not by station); any other printer needs a real tag.
+            boolean isDefault = isOne(d.get("isDefault"));
+            boolean masterRowAdded = false;
             for (JsonElement t : tags) {
                 String tagId = t.isJsonNull() ? null : t.getAsString();
+                if (tagId != null && tagId.trim().isEmpty()) tagId = null;
+                if (tagId == null) {
+                    if (!isDefault || masterRowAdded) continue;
+                    PrinterConfig master = row(d, space, null, stationName(restaurant, null));
+                    master.id = Json.str(d, "id") + "#"; // same id an empty tag always produced
+                    out.add(master);
+                    masterRowAdded = true;
+                    continue;
+                }
                 out.add(row(d, space, tagId, stationName(restaurant, tagId)));
             }
         }
