@@ -158,6 +158,8 @@ public final class PrintPipeline implements NatsEvents {
             return;
         }
         log.append("fcmInsights_", "NATS EVENT accepted orderNo=" + orderNo + " messageId=" + messageId);
+        // The host shows its "Print initiated!" message on this — a backend print never passes through host code.
+        emitPrintReceived(orderNo);
         submit(in);
     }
 
@@ -207,6 +209,17 @@ public final class PrintPipeline implements NatsEvents {
     @Override
     public void onStatusHistoryEvent(String subject, byte[] data) {
         if (listener != null) listener.onStatusEvent(subject, data, true);
+    }
+
+    /** Host notice (connection-event channel, type {@code print_received}): a backend print message was accepted. */
+    private void emitPrintReceived(String orderNo) {
+        Listener l = listener;
+        if (l == null) return;
+        try {
+            l.onConnectionEvent("print_received", orderNo);
+        } catch (RuntimeException e) {
+            log.append("fcmInsights_", "print_received notice failed: " + e);
+        }
     }
 
     @Override
