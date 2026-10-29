@@ -6,11 +6,12 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win nsis --x64"
+    "dist": "electron-builder --win nsis --x64",
+    "dist:signed": "electron-builder --win nsis --x64 --config electron-builder.signed.js"
   },
   "devDependencies": {
     "electron": "^31.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "26.0.12"
   },
   "build": {
     "appId": "com.magilhub.merchantpos.desktop",
