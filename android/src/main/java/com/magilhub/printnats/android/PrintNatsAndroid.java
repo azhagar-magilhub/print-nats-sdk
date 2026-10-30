@@ -288,6 +288,8 @@ public final class PrintNatsAndroid {
                 .starEncoder(new StarIoExtEncoder())
                 .receiptRenderer(receiptRenderer != null ? receiptRenderer
                         : new com.magilhub.printnats.android.render.LegacyReceiptRenderer(app))
+                // Template 6 prints as a bitmap (MerchantApp image mode); every other template is text.
+                .kotBitmapRenderer(new com.magilhub.printnats.android.render.T6KotBitmapRenderer(app))
                 .deviceState(new AndroidDeviceState(app))
                 .dataCapDevice("pax".equalsIgnoreCase(android.os.Build.BRAND)) // JS isDataCapDevice()
                 .log(log)

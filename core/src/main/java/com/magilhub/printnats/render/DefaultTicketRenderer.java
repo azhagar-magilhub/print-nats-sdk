@@ -7,6 +7,7 @@ import com.magilhub.printnats.model.Receipt;
 import com.magilhub.printnats.queue.JobKind;
 import com.magilhub.printnats.queue.PrintJob;
 import com.magilhub.printnats.queue.PrinterConfig;
+import com.magilhub.printnats.spi.KotBitmapRenderer;
 import com.magilhub.printnats.spi.LogSink;
 import com.magilhub.printnats.spi.ReceiptRenderer;
 import com.magilhub.printnats.spi.StarEncoder;
@@ -18,11 +19,19 @@ public final class DefaultTicketRenderer implements TicketRenderer {
 
     private final StarEncoder starEncoder;
     private final ReceiptRenderer receiptRenderer;
+    private final KotBitmapRenderer kotBitmapRenderer;
     private final LogSink log;
 
     public DefaultTicketRenderer(StarEncoder starEncoder, ReceiptRenderer receiptRenderer, LogSink log) {
+        this(starEncoder, receiptRenderer, null, log);
+    }
+
+    /** {@code kotBitmapRenderer} rasterises Template 6 (null ⇒ T6 prints in text mode). */
+    public DefaultTicketRenderer(StarEncoder starEncoder, ReceiptRenderer receiptRenderer,
+                                 KotBitmapRenderer kotBitmapRenderer, LogSink log) {
         this.starEncoder = starEncoder;
         this.receiptRenderer = receiptRenderer;
+        this.kotBitmapRenderer = kotBitmapRenderer;
         this.log = log == null ? LogSink.NONE : log;
     }
 
@@ -35,7 +44,8 @@ public final class DefaultTicketRenderer implements TicketRenderer {
         Receipt receipt = GSON.fromJson(job.payloadJson, Receipt.class);
         String station = printer.resolvedStationName();
         if (!printer.isStar) {
-            return ThermalKotRenderer.render(receipt, station, job.isStation, printer.is58mm, printer.kotSpace, nowMillis);
+            return ThermalKotRenderer.render(receipt, station, job.isStation, printer.is58mm, printer.kotSpace,
+                    nowMillis, kotBitmapRenderer);
         }
         if (starEncoder == null) throw new IllegalStateException("no StarEncoder configured for Star printer " + printer.id);
         StarSink sink = starEncoder.newSink(printer);

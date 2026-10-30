@@ -4,6 +4,9 @@ Baseline: MerchantApp **`Release-27.4`** (HEAD `ecf6b814c`, 2026-09-23). Work st
 checkout moved to 27.4 mid-session and everything was re-checked: KOT templates (PrintUtil/StarPrintUtil) pass
 parity on 27.4, `PrintFrameworkModule` differs only by Toast→uiToast, `useFCMNotificationHandler` 27.4 dropped the
 `sortOrder` override (the port already matches 27.4), receipts are ported from 27.4 (see receipt-port-notes.md).
+Re-checked against MerchantApp **`Release-35.5-p`** (HEAD `1802ab083`, 2026-10-30) when KOT Template 6 was
+ported: the whole suite passes on that branch, so templates 1–6 (thermal and Star) now match 35.5-p.
+Point the tests at any branch with `-PmerchantAppDir=<checkout>`.
 Verified by `:parity` tests, which compile the
 **real, unmodified** MerchantApp sources (synced read-only into `parity/build/legacy-src`) and run them
 on the JVM next to the SDK.
@@ -19,16 +22,19 @@ JAVA_HOME=~/.jenv/versions/11 ./gradlew :parity:testDebugUnitTest -PmerchantAppD
 |---|---|---|---|---|
 | Thermal KOT T1 (legacy default) | `PrintUtil.getAsyncKotPrinter` | `ThermalKotRenderer` | byte-for-byte | ✅ |
 | Thermal KOT T2 / T4 / T5 | `getAsyncKotPrinterT4Impl` + `buildKotLines` | `KotLines` + `ThermalKotRenderer` | byte-for-byte | ✅ |
+| Thermal KOT **T6** — text mode (fallback) | `getAsyncKotPrinterT6` + `buildKotLines(orderHeader=true)` | same, `orderHeader` branch, no rasteriser | layout pinned by `KotT6ImageModeTest`; NOT byte-compared (deviations 3b, 3c) | ✅ by test |
+| Thermal KOT **T6** — image mode (what ships) | `renderT6KotBitmap` at `d2228e6bb^` (MerchantApp's tip reverted it) | `spi/KotBitmapRenderer` → `T6KotBitmapRenderer` (Android Canvas / desktop Java2D) | line roles unit-tested; the bitmap needs a Canvas, so JVM coverage is the desktop twin + a real print | ✅ deliberate divergence from the tip |
 | Thermal KOT **T3** (new) | none — "3" fell through to T1 | = legacy T4 with items forced BIG | byte-for-byte vs legacy T4 | ✅ |
-| Star KOT T1–T5 | `StarPrintUtil.printStarKot*` | `StarKotTemplates` (mechanical port) | ICommandBuilder call-for-call | ✅ |
+| Star KOT T1–T6 | `StarPrintUtil.printStarKot*` | `StarKotTemplates` (mechanical port) | ICommandBuilder call-for-call | ✅ |
+| Modifier font size (`uiFeatureFlags.kotModifierFontSize`) | `kotModifierSize` — Star T5/T6 only; thermal T2–T5 size modifiers with the item | `KotText.kotModifierSize` | call-for-call across the size ladder | ✅ |
 | Default template (blank `templateNo`) | JS fallback `"1"` | `"3"` | unit | ✅ intentional change |
 | Receipt payload (printNetworkReceipt + optimizeReceiptData) | JS (27.4) | `ReceiptPayloadBuilder` | 16 unit tests, values derived from JS | ✅ (see receipt-port-notes.md) |
 | Receipt / EOD rendering | `PrintUtil.getAsyncEscPosPrintReceipt` / `getAsyncEODPrinter` | Android: the same code copied mechanically (`android/legacy`), captured to bytes | by construction; device check pending | ✅ Android / ⏳ desktop (Java2D) |
 | Printer IP rediscovery | `showAlert` → `SubnetDevices` MAC match → `updatePrinterIP` + `updateIPAddress` event → `retryPrintWithNewIp` (receipts only) | `discovery/PrinterRediscovery` + `MacLocator` (/24 sweep, ARP cache: /proc/net/arp, `ip neigh`, `arp -a`) → `onPrinterAddressChanged` → host EditPrinter; failed receipts of that printer re-queued | unit (`DiscoveryTest`) | ✅ (see notes below) |
 
-Fixture matrix: 4 templates × {58 mm, 80 mm} × {take-out master, dine-in station w/ table/guests/batch note/KOT no/buzzer,
+Fixture matrix: 5 templates (1, 2, 4, 5, 6) × {58 mm, 80 mm} × {take-out master, dine-in station w/ table/guests/batch note/KOT no/buzzer,
 customer + reprint + scheduled + unpaid + customization count, voided + event + order source, online card+cash payment,
-raw kotFontStyle, kotFont 1} + 14 item sizes + 4 text cases ≈ 128 thermal cases; Star adds T3 variants × {CP998, UTF-8} ≈ 300 cases.
+raw kotFontStyle, kotFont 1} + 14 item sizes + 6 modifier sizes + 4 text cases ≈ 190 thermal cases; Star adds T3 variants × {CP998, UTF-8} ≈ 440 cases.
 Mutation-checked: changing one byte/string in either renderer fails the suite.
 
 ## Deliberate deviations (fix-forward)
@@ -38,6 +44,9 @@ Mutation-checked: changing one byte/string in either renderer fails the suite.
 | 1 | Thermal T2–T5 footer | card `last4` with `<4` chars → `StringIndexOutOfBounds`, KOT not printed | printed as-is (same guard Star already had) |
 | 2 | Thermal T1 | `kotFontStyle == null` → NPE, KOT not printed | treated as empty |
 | 3 | Template dispatch | blank `templateNo` → T1 (JS default "1"); native Star path NPEs on null | blank → T3 |
+| 3c | Thermal T6 item / modifier spacing | `1 Chicken Biryani`, group flush left, option `" "+count+" "+name`, note indent 2 | quantity→name gap 2, group indent 2, option indent 3 with a 2-space gap after the count, note indent 3; no count ⇒ no leftover gap (user 2026-10-30). T1–T5 unchanged |
+| 3b | Thermal T6 print mode | MerchantApp's 35.5-p TIP prints T6 as firmware text (`d2228e6bb` deleted the bitmap renderer) | T6 prints as ONE BITMAP again, restoring `d2228e6bb^`, at the user's request — text mode stays as the fallback when no rasteriser is configured, and that fallback is what the parity suite checks |
+| 3a | Thermal T6 "Printed:" time | `PrintUtil` reads the wall clock inside `buildKotLines` | the renderer's injected `nowMillis` (same as the 45-min freshness guard) — identical output, but a rendered ticket is reproducible |
 
 ### Print queue (`core/queue`, milestone 4)
 

@@ -90,11 +90,12 @@ public class StarKotParityTest {
         List<String> calls = new ArrayList<>();
         ICommandBuilder b = recordingBuilder(calls);
         String t = r.getTemplateNo();
-        // Same dispatch as PrintFrameworkModule (Release-25.1 :2359).
+        // Same dispatch as PrintFrameworkModule (Release-35.5-p :2385).
         if ("4".equals(t)) StarPrintUtil.printStarKotT4(b, r, c.station, c.isStation, c.is58mm, utf8, null, c.kotSpace);
         else if ("3".equals(t)) StarPrintUtil.printStarKotT3(b, r, c.station, c.isStation, c.is58mm, utf8, null, c.kotSpace);
         else if ("2".equals(t)) StarPrintUtil.printStarKotT2(b, r, c.station, c.isStation, c.is58mm, utf8, null, c.kotSpace);
         else if ("5".equals(t)) StarPrintUtil.printStarKotT5(b, r, c.station, c.isStation, c.is58mm, utf8, null, c.kotSpace);
+        else if ("6".equals(t)) StarPrintUtil.printStarKotT6(b, r, c.station, c.isStation, c.is58mm, utf8, null, c.kotSpace);
         else StarPrintUtil.printStarKot(b, r, c.station, c.isStation, c.is58mm, utf8, null, c.kotSpace);
         return calls;
     }
@@ -121,10 +122,10 @@ public class StarKotParityTest {
     }
 
     @Test
-    public void starTemplates1to5MatchLegacyCallForCall() throws Exception {
+    public void starTemplates1to6MatchLegacyCallForCall() throws Exception {
         int checked = 0;
         for (ThermalKotParityTest.Case base : ThermalKotParityTest.cases()) {
-            // Fixture matrix covers T1/2/4/5; add T3 variants of each T4 case (Star has a real legacy T3).
+            // Fixture matrix covers T1/2/4/5/6; add T3 variants of each T4 case (Star has a real legacy T3).
             List<JsonObject> variants = new ArrayList<>();
             variants.add(base.json);
             if (base.name.startsWith("T4-")) {

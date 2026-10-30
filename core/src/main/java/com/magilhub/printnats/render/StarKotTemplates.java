@@ -1897,9 +1897,33 @@ public final class StarKotTemplates {
         }
     }
 
-    public static StarSink printStarKotT5(StarSink builder, Receipt receipt, String stationName, boolean isStation, boolean is58mm, boolean isUtf8,LogSink context,int kotSpace) {
+    /** At least one space, {@code count} when positive (Template 6 left/right padding). */
+    private static String t6Spaces(int count) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            sb.append(' ');
+        }
+        if (sb.length() == 0) sb.append(' ');
+        return sb.toString();
+    }
 
-        appendLogInNativeComponent(context,"print_","Info:: Star Print Utils Initiated (T5) - stationName: "+stationName);
+    public static StarSink printStarKotT5(StarSink builder, Receipt receipt, String stationName, boolean isStation, boolean is58mm, boolean isUtf8,LogSink context,int kotSpace) {
+        return printStarKotT5Impl(builder, receipt, stationName, isStation, is58mm, isUtf8, context, kotSpace, false);
+    }
+
+    /** Template 6 (Star) — Template 5 with a different server / table block:
+     *  "Server" + date on one line, the server name + time (bold) on the next, and one
+     *  "Table: <value>   Guests: <value>" line with the values at item size, bold and guests as two
+     *  digits; fixed typography like Star Template 4: 2x2 (order type, items, modifiers, Ticket /
+     *  Order # bold), server / date / time 1x1 (DB font sizes ignored). Everything else (badges,
+     *  colours/invert, items, footer) is Template 5. */
+    public static StarSink printStarKotT6(StarSink builder, Receipt receipt, String stationName, boolean isStation, boolean is58mm, boolean isUtf8,LogSink context,int kotSpace) {
+        return printStarKotT5Impl(builder, receipt, stationName, isStation, is58mm, isUtf8, context, kotSpace, true);
+    }
+
+    private static StarSink printStarKotT5Impl(StarSink builder, Receipt receipt, String stationName, boolean isStation, boolean is58mm, boolean isUtf8,LogSink context,int kotSpace, boolean t6) {
+
+        appendLogInNativeComponent(context,"print_","Info:: Star Print Utils Initiated (" + (t6 ? "T6" : "T5") + ") - stationName: "+stationName);
 
         // DB-driven font size + case — see KotText.getAsyncKotPrinterT2/T5 for the
         // thermal counterpart of this exact config.
@@ -1919,8 +1943,25 @@ public final class StarKotTemplates {
         // goes bold too — giving two distinguishable tiers (plain 2x2, bold 2x2) instead of
         // one, rather than 6+ tiers that all rendered the same.
         boolean t5SizeBold = (t5SizeCode == 2 || t5SizeCode == 4 || t5SizeCode >= KotLineDesc.SIZE_MEDIUM2);
+        // Modifiers and item notes: their own size (uiFeatureFlags.kotModifierFontSize, same ladder), by
+        // default one Star step below the item name so the item stands out.
+        int t5ModSizeCode = KotText.kotModifierSize(receipt.getKotModifierFontSize(), t5SizeCode);
+        int[] t5ModMult = KotText.starSizeMultiple(t5ModSizeCode);
+        boolean t5ModSizeBold = (t5ModSizeCode == 2 || t5ModSizeCode == 4 || t5ModSizeCode >= KotLineDesc.SIZE_MEDIUM2);
+        if (t6) {
+            // Template 6: fixed typography matching Star Template 4 (DB font sizes are ignored for now) —
+            // order type, badges, table, customer, notes, items, Ticket # and Order # at Font A 2x2;
+            // modifiers 2x1 (a step below the item; Font B is ignored by some Star models, so there is no
+            // text size between 2x1 and 2x2); server name + time 1x1 bold; date line 1x1.
+            t5Mult = new int[]{2, 2};
+            t5SizeBold = false;
+            t5ModMult = new int[]{2, 1};
+            t5ModSizeBold = false;
+        }
         boolean t5UpperItem = receipt.getShowUpperCaseItemName() != null && "true".equalsIgnoreCase(receipt.getShowUpperCaseItemName().toString());
-        String t5ItemTextCase = (receipt.getKotItemTextCase() == null || receipt.getKotItemTextCase().trim().isEmpty())
+        // Template 6: items and modifiers always in Title Case ("Ghee Roast"); kotItemTextCase is ignored.
+        String t5ItemTextCase = t6 ? "title"
+                : (receipt.getKotItemTextCase() == null || receipt.getKotItemTextCase().trim().isEmpty())
                 ? "title" : receipt.getKotItemTextCase().trim();
 
         String dateTimeString = receipt.getCurrentDate() + " " + receipt.getCurrentTime();
@@ -2049,7 +2090,8 @@ public final class StarKotTemplates {
             builder.appendRaw(new byte[]{0x1B, 0x40});
             builder.appendMultiple(1,1);
             builder.append((equalDashLine).getBytes(encoding));
-            if (receipt.getServerStaffName() != null && !receipt.getServerStaffName().toString().isEmpty()) {
+            // Template 6 prints the server under the order type, beside the date / time.
+            if (!t6 && receipt.getServerStaffName() != null && !receipt.getServerStaffName().toString().isEmpty()) {
                 String lr1 = u.leftRightAlign(serverName, orderSectionName, lineWidth);
                 builder.append(("\n"+lr1).getBytes(encoding));
             }
@@ -2102,14 +2144,56 @@ public final class StarKotTemplates {
 
             builder.appendRaw(new byte[]{0x1B, 0x40});
             builder.appendMultiple(1,1);
-            String lr2 = u.leftRightAlign(orderDate, orderTime, lineWidth);
-            builder.append((lr2).getBytes(encoding));
+            if (t6) {
+                // "Server                 04/13/2026"  (normal, as Template 4's server / date lines)
+                // "Nancy S               11:50:53 AM"  (name and time on one line, Font A 1x1 bold)
+                String server = (receipt.getServerStaffName() != null) ? receipt.getServerStaffName().toString().trim() : "";
+                String time = orderTime == null ? "" : orderTime.trim();
+                String t6Date = orderDate == null ? "" : orderDate.trim();
+                String serverLabel = server.isEmpty() ? "" : "Server";
+                builder.appendAlignment(StarSink.Align.Left);
+                builder.append(serverLabel.getBytes(encoding));
+                builder.append(t6Spaces(lineWidth - serverLabel.length() - t6Date.length()).getBytes(encoding));
+                builder.append(t6Date.getBytes(encoding));
+                builder.append("\n".getBytes(encoding));
+                // One font for the whole line, Font A like the Server / date line above, so it fits the same
+                // lineWidth columns (Font B is not narrower on every Star model and wrapped the time).
+                int nameMax = Math.max(1, lineWidth - time.length() - 1);
+                if (server.length() > nameMax) server = server.substring(0, nameMax);
+                builder.appendMultiple(1, 1);
+                builder.appendEmphasis(true);
+                builder.append((server + t6Spaces(lineWidth - server.length() - time.length()) + time).getBytes(encoding));
+                builder.appendEmphasis(false);
+            } else {
+                String lr2 = u.leftRightAlign(orderDate, orderTime, lineWidth);
+                builder.append((lr2).getBytes(encoding));
+            }
 
             builder.appendAlignment(StarSink.Align.Left);
             builder.append(("\n"+equalDashLine).getBytes(encoding));
 
 
-            if (receipt.getTableName() != null && !receipt.getTableName().toString().isEmpty()) {
+            if (t6 && receipt.getTableName() != null && !receipt.getTableName().toString().isEmpty()) {
+                // "Table: B6                Guests: 02"  (labels normal, values at item size + bold)
+                String table = receipt.getTableName().toString().trim();
+                String guests = receipt.getGuestCount() != null ? receipt.getGuestCount().toString().trim() : "";
+                if (guests.matches("\\d")) guests = "0" + guests;
+                int rightCols = guests.isEmpty() ? 0 : ("Guests: ".length() + guests.length() * t5Mult[0]);
+                int tableMax = Math.max(1, (lineWidth - "Table: ".length() - rightCols - 1) / t5Mult[0]);
+                if (table.length() > tableMax) table = table.substring(0, tableMax);
+                builder.appendEmphasis(false);
+                builder.appendMultiple(1, 1);
+                builder.append("\nTable: ".getBytes(encoding));
+                appendT5Sized(builder, table.getBytes(encoding), t5Mult, true, false);
+                builder.appendEmphasis(false);
+                if (!guests.isEmpty()) {
+                    builder.appendMultiple(1, 1);
+                    builder.append((t6Spaces(lineWidth - "Table: ".length() - table.length() * t5Mult[0] - rightCols) + "Guests: ").getBytes(encoding));
+                    appendT5Sized(builder, guests.getBytes(encoding), t5Mult, true, false);
+                    builder.appendEmphasis(false);
+                }
+                builder.appendMultiple(("\n"+dashedLine).getBytes(encoding), 1, 1);
+            } else if (receipt.getTableName() != null && !receipt.getTableName().toString().isEmpty()) {
                 builder.appendEmphasis(true);
                 appendT5Sized(builder, tableName.getBytes(encoding), t5Mult, t5SizeBold, false);
                 if (receipt.getGuestCount() != null && !receipt.getGuestCount().toString().isEmpty()) {
@@ -2136,7 +2220,9 @@ public final class StarKotTemplates {
 
             if (receipt.getComment() != null && !receipt.getComment().toString().isEmpty() && !receipt.getComment().equalsIgnoreCase("-")) {
                 builder.appendEmphasis(false);
-                appendT5Sized(builder, KotText.caseText(orderNote, t5UpperItem).getBytes(encoding), t5Mult, t5SizeBold, true);
+                // Template 6: the order note in Title Case like the items.
+                String printedOrderNote = t6 ? KotText.applyItemCase(orderNote, t5ItemTextCase, t5UpperItem) : KotText.caseText(orderNote, t5UpperItem);
+                appendT5Sized(builder, printedOrderNote.getBytes(encoding), t5Mult, t5SizeBold, true);
                 builder.appendMultiple(("\n"+dashedLine).getBytes(encoding), 1, 1);
             }
 
@@ -2182,14 +2268,25 @@ public final class StarKotTemplates {
                             String[] optionNameParts = op.getOptionName().split(":");
                             String customizationCount = receipt.getIsCustomizationCountRequired() ?  op.getQuantity() : "";
                             builder.appendAlignment(StarSink.Align.Left);
-                            if(optionNameParts.length>1){
+                            if (t6) {
+                                // Template 6: modifiers at 2x1 (a step below the 2x2 item), not bold, one extra space
+                                // before the modifier name.
                                 builder.appendEmphasis(false);
-                                appendT5Sized(builder, ("\n" + optionNameParts[0]).getBytes(encoding), t5Mult, t5SizeBold, true);
-                                appendT5Sized(builder, ("\n " + customizationCount + " "+ KotText.applyItemCase(optionNameParts[1], t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5Mult, t5SizeBold, true);
+                                if (optionNameParts.length > 1) {
+                                    appendT5Sized(builder, ("\n" + KotText.applyItemCase(optionNameParts[0], t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5ModMult, false, true);
+                                    appendT5Sized(builder, ("\n " + customizationCount + "  "+ KotText.applyItemCase(optionNameParts[1], t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5ModMult, false, true);
+                                } else {
+                                    appendT5Sized(builder, ("\n " + customizationCount + "  "+ KotText.applyItemCase(op.getOptionName(), t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5ModMult, false, true);
+                                }
+                                builder.appendEmphasis(false);
+                            } else if(optionNameParts.length>1){
+                                builder.appendEmphasis(false);
+                                appendT5Sized(builder, ("\n" + optionNameParts[0]).getBytes(encoding), t5ModMult, t5ModSizeBold, true);
+                                appendT5Sized(builder, ("\n " + customizationCount + " "+ KotText.applyItemCase(optionNameParts[1], t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5ModMult, t5ModSizeBold, true);
                             }
                             else {
                                 builder.appendEmphasis(false);
-                                appendT5Sized(builder, ("\n " + customizationCount + " "+ KotText.applyItemCase(op.getOptionName(), t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5Mult, t5SizeBold, true);
+                                appendT5Sized(builder, ("\n " + customizationCount + " "+ KotText.applyItemCase(op.getOptionName(), t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5ModMult, t5ModSizeBold, true);
                             }
                         }
                     }
@@ -2198,7 +2295,7 @@ public final class StarKotTemplates {
                         builder.appendAlignment(StarSink.Align.Left);
                         appendLogInNativeComponent(context,"print_","Info:: Star Print Order Item Note: "+item.getComment());
                         builder.appendEmphasis(false);
-                        appendT5Sized(builder, ("\n  " + KotText.applyItemCase(item.getComment(), t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5Mult, t5SizeBold, true);
+                        appendT5Sized(builder, ("\n  " + KotText.applyItemCase(item.getComment(), t5ItemTextCase, t5UpperItem)).getBytes(encoding), t5ModMult, t5ModSizeBold, true);
                     }
                     builder.appendAlignment(StarSink.Align.Left);
                 }
@@ -2286,7 +2383,7 @@ public final class StarKotTemplates {
                     ((receipt.getBuzzerNo() != null && !receipt.getBuzzerNo().trim().isEmpty())
                             ? "\n  Buzzer #: " + receipt.getBuzzerNo()
                             : "");
-            appendT5Sized(builder, orderNoT5Line.getBytes(encoding), t5Mult, t5SizeBold, true);
+            appendT5Sized(builder, orderNoT5Line.getBytes(encoding), t5Mult, t5SizeBold || t6, true);
 
             builder.appendMultiple(("\n"+equalDashLine+"\n").getBytes(encoding), 1, 1);
 

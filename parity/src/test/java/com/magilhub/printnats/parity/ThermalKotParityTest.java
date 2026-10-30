@@ -128,7 +128,7 @@ public class ThermalKotParityTest {
 
     static List<Case> cases() {
         List<Case> out = new ArrayList<>();
-        String[] templates = {"1", "2", "4", "5"};
+        String[] templates = {"1", "2", "4", "5", "6"};
         for (String t : templates) {
             for (boolean is58 : new boolean[]{false, true}) {
                 String p = "T" + t + (is58 ? "-58" : "-80");
@@ -204,6 +204,14 @@ public class ThermalKotParityTest {
                 s.addProperty("kotItemFontSize", size);
                 out.add(new Case("T" + t + "-size-" + size, s, false, false, "", 0));
             }
+            // Modifier size ladder (uiFeatureFlags.kotModifierFontSize) — Star T5/T6 size modifiers and
+            // item notes with it; thermal T2/T4/T5 keep them at the item size, so these are no-ops there.
+            for (String size : new String[]{"small", "medium", "big", "size3", "size9", ""}) {
+                JsonObject s2 = base(t);
+                s2.addProperty("kotItemFontSize", "big");
+                s2.addProperty("kotModifierFontSize", size);
+                out.add(new Case("T" + t + "-modsize-" + (size.isEmpty() ? "blank" : size), s2, false, false, "", 0));
+            }
             for (String tc : new String[]{"title", "upper", "lower", ""}) {
                 JsonObject s = base(t);
                 s.addProperty("kotItemTextCase", tc);
@@ -253,10 +261,18 @@ public class ThermalKotParityTest {
     @Test
     public void thermalTemplates1245MatchLegacyByteForByte() throws Exception {
         List<Case> cases = cases();
+        int checked = 0;
         for (Case c : cases) {
+            // Thermal Template 6 is deliberately NOT byte-compatible with MerchantApp's tip any more
+            // (parity matrix deviation 3b): it prints as a bitmap, and its item / modifier indents were
+            // widened on request. Its layout is pinned by core's KotT6ImageModeTest instead. The T6
+            // fixtures stay in cases() because Star T6 IS still call-for-call identical — see
+            // StarKotParityTest, which reuses this matrix.
+            if (c.name.startsWith("T6-")) continue;
             assertSameBytes(c.name, legacy(c, c.json), sdk(c, c.json));
+            checked++;
         }
-        assertTrue("fixture matrix too small: " + cases.size(), cases.size() > 100);
+        assertTrue("fixture matrix too small: " + checked, checked > 100);
     }
 
     /** New thermal T3 == legacy thermal T4 with items forced BIG (Star T3 layout, 2x2 items). */

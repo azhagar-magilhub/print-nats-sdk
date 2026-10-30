@@ -23,6 +23,7 @@ import com.magilhub.printnats.spi.InboundStore;
 import com.magilhub.printnats.spi.JobStore;
 import com.magilhub.printnats.spi.LogSink;
 import com.magilhub.printnats.spi.PrinterTransport;
+import com.magilhub.printnats.spi.KotBitmapRenderer;
 import com.magilhub.printnats.spi.ReceiptRenderer;
 import com.magilhub.printnats.spi.StarEncoder;
 import com.magilhub.printnats.spi.TicketRenderer;
@@ -121,7 +122,7 @@ public final class PrintNats {
                 return null;
             }
         };
-        TicketRenderer renderer = new DefaultTicketRenderer(b.starEncoder, b.receiptRenderer, log);
+        TicketRenderer renderer = new DefaultTicketRenderer(b.starEncoder, b.receiptRenderer, b.kotBitmapRenderer, log);
         this.renderer = renderer;
         this.transport = b.transport;
         this.queue = new PrintQueue(b.jobStore, lookup, renderer, b.transport, log);
@@ -960,6 +961,7 @@ public final class PrintNats {
         private PrinterTransport transport;
         private StarEncoder starEncoder;
         private ReceiptRenderer receiptRenderer;
+        private KotBitmapRenderer kotBitmapRenderer;
         private HttpClient http = new UrlConnectionHttpClient(60_000);
         private LogSink log = LogSink.NONE;
         private DeviceState deviceState = DeviceState.ALWAYS_ONLINE;
@@ -1096,6 +1098,12 @@ public final class PrintNats {
 
         public Builder starEncoder(StarEncoder e) {
             this.starEncoder = e;
+            return this;
+        }
+
+        /** Template 6 rasteriser (see {@link KotBitmapRenderer}); unset ⇒ T6 prints in text mode. */
+        public Builder kotBitmapRenderer(KotBitmapRenderer r) {
+            this.kotBitmapRenderer = r;
             return this;
         }
 

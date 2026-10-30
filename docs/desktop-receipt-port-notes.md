@@ -21,6 +21,7 @@ Renders are serialised on a static lock (PrintUtil keeps `mContext`, `mis58mm` i
 desktop/src/main/java/com/magilhub/printnats/desktop/render/
   Java2dReceiptRenderer.java   hand-written (mirrors android/render/LegacyReceiptRenderer)
   EscPosPreview.java           hand-written: GS v 0 → BufferedImage, ESC/POS → plain text (previews/tests)
+  T6KotBitmapRenderer.java     hand-written twin of android/render/T6KotBitmapRenderer (KOT Template 6 image mode)
   compat/                      hand-written Android-API shim on Java2D
   compat/json/                 hand-written org.json (Android/libcore semantics) over Gson
   legacy/                      GENERATED copy (66 files) — do not edit
@@ -66,7 +67,15 @@ Not copied: `escpos/connection/{bluetooth,usb,tcp}` (Android transports), `StarS
 
 **Hand-written:** `Java2dReceiptRenderer`, `EscPosPreview`, `ReceiptLogoCache` (twin of the adapter's
 `android.render.ReceiptLogoCache`; `load` only — no `prefetch`/`urlFrom`, so the first print does the fetch),
-`legacy/logging/LogFileAppender`, everything in `compat/`.
+`T6KotBitmapRenderer` (twin of the adapter's `android.render.T6KotBitmapRenderer` — KOT Template 6 draws its
+ticket instead of printing firmware text; the drawing code is MerchantApp's `PrintUtil.renderT6KotBitmap` and the
+two files differ only in their `android.graphics` → `compat` imports), `legacy/logging/LogFileAppender`,
+everything in `compat/`.
+
+Both twins sit OUTSIDE `legacy/`, so `copy-from-android.sh` does not regenerate them: changing one means
+changing the other by hand. `Outfit-SemiBold.ttf` is needed by Template 6 and is now in both asset trees —
+the rasteriser logs and falls back to text mode when a face is missing, so a dropped font looks like
+"T6 suddenly prints small" rather than a crash.
 
 ## Regenerating the copy
 

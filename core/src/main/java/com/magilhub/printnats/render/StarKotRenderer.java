@@ -5,7 +5,7 @@ import com.magilhub.printnats.spi.LogSink;
 
 /**
  * Star KOT template dispatch — mirrors MerchantApp {@code PrintFrameworkModule} (Release-25.1 :2359):
- * "2"/"3"/"4"/"5" → that template, null/blank → "3" (SDK default), anything else → Template 1.
+ * "2"/"3"/"4"/"5"/"6" → that template, null/blank → "3" (SDK default), anything else → Template 1.
  */
 public final class StarKotRenderer {
     private StarKotRenderer() {
@@ -33,6 +33,9 @@ public final class StarKotRenderer {
                 break;
             case "5":
                 StarKotTemplates.printStarKotT5(sink, receipt, stationName, isStation, is58mm, isUtf8, log, kotSpace);
+                break;
+            case "6":
+                StarKotTemplates.printStarKotT6(sink, receipt, stationName, isStation, is58mm, isUtf8, log, kotSpace);
                 break;
             default:
                 StarKotTemplates.printStarKot(sink, receipt, stationName, isStation, is58mm, isUtf8, log, kotSpace);

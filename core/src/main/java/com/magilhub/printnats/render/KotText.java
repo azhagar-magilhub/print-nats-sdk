@@ -114,6 +114,16 @@ public final class KotText {
         return defaultBig ? KotLineDesc.SIZE_BIG : KotLineDesc.SIZE_NORMAL;
     }
 
+    /** Size for KOT modifiers and item notes: uiFeatureFlags.kotModifierFontSize (same ladder as
+     *  kotItemFontSize) when set, else one Star step below the item size: 2x2 -> 1x2 (medium),
+     *  1x2 / 2x1 -> 1x1 (small). A 1x1 item has nothing smaller, so its modifiers stay 1x1 (not bold). */
+    public static int kotModifierSize(String cfg, int itemSize) {
+        if (cfg != null && !cfg.trim().isEmpty()) return kotItemSize(cfg, false);
+        int[] itemMult = starSizeMultiple(itemSize);
+        if (itemMult[0] >= 2 && itemMult[1] >= 2) return KotLineDesc.SIZE_MEDIUM;
+        return KotLineDesc.SIZE_NORMAL;
+    }
+
     /** Star counterpart of the thermal size ladder: appendMultiple(width, height) per size code. */
     public static int[] starSizeMultiple(int sizeCode) {
         switch (sizeCode) {

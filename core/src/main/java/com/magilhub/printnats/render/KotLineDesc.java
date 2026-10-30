@@ -17,6 +17,14 @@ public final class KotLineDesc {
     public static final int SIZE_BIG = 7;
     public static final int SIZE_MAX = 12;
 
+    // Template 6 line roles, used instead of a ladder size when T6 renders as a bitmap
+    // (see spi/KotBitmapRenderer). Outside the 0..12 ladder on purpose, so a role can never be
+    // mistaken for an ESC/POS size; anything else on a T6 ticket (the dividers) is a meta line.
+    public static final int T6_ROLE_HEAD = 101;     // ORDER, order type / source
+    public static final int T6_ROLE_KEY = 102;      // Server, Ticket #, Order #, REPRINT
+    public static final int T6_ROLE_ITEM = 103;     // items, customer, notes, table, badges
+    public static final int T6_ROLE_MODIFIER = 104; // modifier groups, modifiers, item notes
+
     public final String text;
     public final int size;
     public final boolean center;

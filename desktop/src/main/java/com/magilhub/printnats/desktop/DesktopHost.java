@@ -150,6 +150,8 @@ public final class DesktopHost {
                 .transport(transport)
                 .starEncoder(new com.magilhub.printnats.render.StarDotImpactEncoder())
                 .receiptRenderer(new com.magilhub.printnats.desktop.render.Java2dReceiptRenderer())
+                // Template 6 prints as a bitmap (MerchantApp image mode); every other template is text.
+                .kotBitmapRenderer(new com.magilhub.printnats.desktop.render.T6KotBitmapRenderer())
                 .log(log)
                 .listener(listener)
                 .relayOrderHook(relayOrderHook)

@@ -3,6 +3,7 @@ package com.magilhub.printnats.render;
 import com.magilhub.printnats.model.Item;
 import com.magilhub.printnats.model.Option;
 import com.magilhub.printnats.model.Receipt;
+import com.magilhub.printnats.spi.KotBitmapRenderer;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,7 +15,7 @@ import static com.magilhub.printnats.render.KotText.notEmpty;
  * (Release-25.1) with printer I/O removed: it returns the exact bytes the old code streamed to the
  * connection after {@code connect()}; the transport sends them.
  *
- * <p>Template selection ({@link #resolveTemplate}): "2", "3", "4", "5" → shared line layout
+ * <p>Template selection ({@link #resolveTemplate}): "2", "3", "4", "5", "6" → shared line layout
  * ({@link KotLines}); null/blank → "3" (SDK default); anything else → legacy Template 1.
  */
 public final class ThermalKotRenderer {
@@ -35,6 +36,14 @@ public final class ThermalKotRenderer {
      */
     public static RenderResult render(Receipt receipt, String stationName, boolean isStation, boolean is58mm,
                                       int kotSpace, long nowMillis) {
+        return render(receipt, stationName, isStation, is58mm, kotSpace, nowMillis, null);
+    }
+
+    /**
+     * @param kotBitmap rasteriser for Template 6 (null ⇒ T6 prints in text mode)
+     */
+    public static RenderResult render(Receipt receipt, String stationName, boolean isStation, boolean is58mm,
+                                      int kotSpace, long nowMillis, KotBitmapRenderer kotBitmap) {
         if (FreshnessGuard.isStale(receipt, nowMillis)) {
             return RenderResult.skipped("stale: order older than 45 minutes");
         }
@@ -50,15 +59,24 @@ public final class ThermalKotRenderer {
             case "4":
                 // T4 honours kotItemFontSize but defaults BIG.
                 return lineTemplate(receipt, stationName, isStation, is58mm,
-                        KotText.kotItemSize(receipt.getKotItemFontSize(), true), null, template);
+                        KotText.kotItemSize(receipt.getKotItemFontSize(), true), null, template, nowMillis, null);
             case "3":
                 // T3 = Star T3 layout; Star T3 always prints items 2x2 and ignores kotItemFontSize.
-                return lineTemplate(receipt, stationName, isStation, is58mm, KotLineDesc.SIZE_BIG, null, template);
+                return lineTemplate(receipt, stationName, isStation, is58mm, KotLineDesc.SIZE_BIG, null, template, nowMillis, null);
             case "2":
             case "5":
                 // T2 (HBB, MS-1718) and its clone T5: small default size + configurable case.
                 return lineTemplate(receipt, stationName, isStation, is58mm,
-                        KotText.kotItemSize(receipt.getKotItemFontSize(), false), itemCase(receipt), template);
+                        KotText.kotItemSize(receipt.getKotItemFontSize(), false), itemCase(receipt), template, nowMillis, null);
+            case "6":
+                // T6: Template 5 with the "ORDER: <buzzer, else table>" header. Fixed typography either way
+                // (kotItemFontSize / kotModifierFontSize ignored). With a rasteriser it prints as ONE BITMAP
+                // at the T6_PX_* sizes (MerchantApp's image mode); without one it falls back to firmware text
+                // — items, ORDER, order type, Ticket # / Order # / REPRINT, Server bold Font A 1x1 (size2),
+                // modifiers A 1x1.
+                return lineTemplate(receipt, stationName, isStation, is58mm,
+                        kotBitmap != null ? KotLineDesc.T6_ROLE_ITEM : 2,
+                        itemCase(receipt), template, nowMillis, kotBitmap);
             default:
                 return legacyTemplate1(receipt, stationName, isStation, is58mm, kotSpace);
         }
@@ -72,7 +90,15 @@ public final class ThermalKotRenderer {
     // ---- Templates 2/3/4/5 -------------------------------------------------------------------------
 
     private static RenderResult lineTemplate(Receipt receipt, String stationName, boolean isStation, boolean is58mm,
-                                             int itemSize, String itemTextCase, String template) {
+                                             int itemSize, String itemTextCase, String template, long nowMillis,
+                                             KotBitmapRenderer kotBitmap) {
+        // Template 6 is the only thermal template with its own modifier size (Font A 1x1 under the
+        // bold 1x1 items, or its own role in image mode); T2/T3/T4/T5 size modifiers with the item,
+        // as PrintUtil's 3-arg T4Impl does.
+        boolean orderHeader = "6".equals(template);
+        boolean imageMode = orderHeader && kotBitmap != null;
+        int modifierSize = imageMode ? KotLineDesc.T6_ROLE_MODIFIER
+                : orderHeader ? KotLineDesc.SIZE_NORMAL : itemSize;
         int maxer = is58mm ? 32 : 46;
 
         // DB-driven "BIG" size: raw kotFontStyle wins; else kotFont "2" -> ESC ! 0x20; else GS ! 0x11.
@@ -95,7 +121,24 @@ public final class ThermalKotRenderer {
 
         EscPosWriter w = new EscPosWriter();
         w.reset();
-        List<KotLineDesc> lines = KotLines.build(receipt, isStation, stationName, maxer, itemSize, itemTextCase);
+        List<KotLineDesc> lines = KotLines.build(receipt, isStation, stationName, maxer, itemSize, modifierSize,
+                itemTextCase, orderHeader, imageMode, nowMillis);
+        if (imageMode) {
+            // One bitmap instead of per-line text, then the SAME tail as the text path
+            // (PrintUtil.getAsyncKotPrinterT4Impl: reset → printImage → "\n\n\n" → feed 3 → cut).
+            byte[] image = kotBitmap.render(lines, is58mm);
+            if (image != null) {
+                w.raw(image);
+                w.printText("\n\n\n", normal);
+                w.feedPaper(3);
+                w.cutPaper();
+                return RenderResult.bytes(w.toByteArray(), "thermal-T6-image", lines.size());
+            }
+            // The rasteriser gave up (missing fonts, OOM): re-build at the text-mode sizes and print that,
+            // rather than dropping the ticket.
+            lines = KotLines.build(receipt, isStation, stationName, maxer, 2, KotLineDesc.SIZE_NORMAL,
+                    itemTextCase, true, false, nowMillis);
+        }
         for (KotLineDesc d : lines) {
             w.setAlign(d.center ? EscPosWriter.TEXT_ALIGN_CENTER : EscPosWriter.TEXT_ALIGN_LEFT);
             byte[] size = sizeBytes(d.size, big, normal);

@@ -166,6 +166,9 @@ public final class KotPayloadBuilder {
         p.addProperty("batchNote", r.flag("batchNote", ">>> Fire <<<"));
         p.addProperty("kotItemFontSize", r.flag("kotItemFontSize", "size7"));
         p.addProperty("kotItemTextCase", r.flag("kotItemTextCase", "title"));
+        // Blank on purpose (MerchantApp useNetworkPrintService does the same): KotText.kotModifierSize
+        // then puts modifiers one Star step below the item instead of pinning them to a size.
+        p.addProperty("kotModifierFontSize", r.flag("kotModifierFontSize", ""));
         p.addProperty("showPaymentMethod", r.flag("showPaymentMethod", "false"));
         p.addProperty("showGrandTotal", r.flag("showGrandTotal", "true"));
         p.addProperty("showUpperCaseItemName", r.flag("showUpperCaseItemName", "true"));

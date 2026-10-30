@@ -621,6 +621,12 @@ public class Receipt {
     @Expose
     private String kotItemFontSize;
 
+    // Template 6 / Star Template 5: modifiers and item notes get their own size on the same
+    // ladder. Empty/absent -> one Star step below the item size (KotText.kotModifierSize).
+    @SerializedName("kotModifierFontSize")
+    @Expose
+    private String kotModifierFontSize;
+
     @SerializedName("kotItemTextCase")
     @Expose
     private String kotItemTextCase;
@@ -1513,6 +1519,7 @@ public class Receipt {
     public LoyaltyPointReceipt getLoyaltyPointReceipt() { return loyaltyPointReceipt; }
     public String getKotItemFontSize() { return kotItemFontSize; }
     public String getKotItemTextCase() { return kotItemTextCase; }
+    public String getKotModifierFontSize() { return kotModifierFontSize; }
 
 
 }
