@@ -822,7 +822,7 @@ public class PrintUtil {
 
 
                 printerCommands.printText("---------------------------------------------- \n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
-                printerCommands.printText("Cash Reconcilitation" + "\n\n", EscPosPrinterCommands.TEXT_SIZE_BIG);
+                printerCommands.printText("Cash Reconciliation" + "\n\n", EscPosPrinterCommands.TEXT_SIZE_BIG);
                 printerCommands.printText("Expected Amount   " + currency + String.format("%.2f", expectedAmount) + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
                 printerCommands.printText("Counted Amount    " + currency + String.format("%.2f", countedAmount) + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
                 printerCommands.printText("Variance          " + currency + String.format("%.2f", variance) + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
@@ -3467,6 +3467,14 @@ public class PrintUtil {
      * path and the ESC/POS bitmap paths. Row height is fixed by logoHeightPx;
      * the whole row is clamped DOWN if it is wider than maxWidthPx.
      */
+    /**
+     * Drawable id by name from the host app's merged resources — works whether this module is an AAR (its own R
+     * class) or compiled from source into the RN bridge (no com.magilhub.printnats.desktop.render.compat.R there). 0 if missing.
+     */
+    private static int drawableId(Context ctx, String name) {
+        return ctx.getResources().getIdentifier(name, "drawable", ctx.getPackageName());
+    }
+
     private static Bitmap buildPaymentMethodsStrip(Context ctx, List<String> cards,
                                                    int logoHeightPx, int maxWidthPx) {
         if (ctx == null || cards == null || cards.isEmpty() || logoHeightPx <= 0) {
@@ -3475,12 +3483,12 @@ public class PrintUtil {
 
         // Canonical token -> drawable, in Figma display order.
         LinkedHashMap<String, Integer> catalog = new LinkedHashMap<>();
-        catalog.put("mastercard", com.magilhub.printnats.desktop.render.compat.R.drawable.pm_mastercard);
-        catalog.put("visa", com.magilhub.printnats.desktop.render.compat.R.drawable.pm_visa);
-        catalog.put("amex", com.magilhub.printnats.desktop.render.compat.R.drawable.pm_amex);
-        catalog.put("discover", com.magilhub.printnats.desktop.render.compat.R.drawable.pm_discover);
-        catalog.put("applepay", com.magilhub.printnats.desktop.render.compat.R.drawable.pm_applepay);
-        catalog.put("googlepay", com.magilhub.printnats.desktop.render.compat.R.drawable.pm_googlepay);
+        catalog.put("mastercard", drawableId(ctx, "pm_mastercard"));
+        catalog.put("visa", drawableId(ctx, "pm_visa"));
+        catalog.put("amex", drawableId(ctx, "pm_amex"));
+        catalog.put("discover", drawableId(ctx, "pm_discover"));
+        catalog.put("applepay", drawableId(ctx, "pm_applepay"));
+        catalog.put("googlepay", drawableId(ctx, "pm_googlepay"));
 
         // Normalize what the merchant accepts, folding known aliases.
         java.util.Set<String> accepted = new java.util.HashSet<>();
@@ -3503,7 +3511,7 @@ public class PrintUtil {
         List<Bitmap> logos = new ArrayList<>();
         int sumW = 0;
         for (java.util.Map.Entry<String, Integer> e : catalog.entrySet()) {
-            if (!accepted.contains(e.getKey())) continue;
+            if (!accepted.contains(e.getKey()) || e.getValue() == 0) continue;
             Bitmap raw = com.magilhub.printnats.desktop.render.compat.BitmapFactory.decodeResource(
                     ctx.getResources(), e.getValue(), opts);
             if (raw == null) continue;
@@ -3629,8 +3637,9 @@ public class PrintUtil {
                 try {
                     com.magilhub.printnats.desktop.render.compat.StrictMode.ThreadPolicy policy = new com.magilhub.printnats.desktop.render.compat.StrictMode.ThreadPolicy.Builder().permitAll().build();
                     com.magilhub.printnats.desktop.render.compat.StrictMode.setThreadPolicy(policy);
-                    java.net.URL url = new java.net.URL(logoUrl);
-                    com.magilhub.printnats.desktop.render.compat.Bitmap logoBitmap = com.magilhub.printnats.desktop.render.compat.BitmapFactory.decodeStream(url.openConnection().getInputStream());
+                    // SDK: this device's saved copy first (prints offline), else download + save
+                    // (MerchantApp offline sends logoBase64 in the payload instead — see ReceiptLogoCache).
+                    com.magilhub.printnats.desktop.render.compat.Bitmap logoBitmap = com.magilhub.printnats.desktop.render.ReceiptLogoCache.load(context, logoUrl);
                     if (logoBitmap != null) {
                         int targetWidth = Math.round(effectiveWidth * 0.6f);
                         int targetHeight = Math.round(((float) logoBitmap.getHeight()) * ((float) targetWidth) / ((float) logoBitmap.getWidth()));
@@ -4821,8 +4830,9 @@ public class PrintUtil {
                 try {
                     com.magilhub.printnats.desktop.render.compat.StrictMode.ThreadPolicy policy = new com.magilhub.printnats.desktop.render.compat.StrictMode.ThreadPolicy.Builder().permitAll().build();
                     com.magilhub.printnats.desktop.render.compat.StrictMode.setThreadPolicy(policy);
-                    java.net.URL url = new java.net.URL(logoUrl);
-                    com.magilhub.printnats.desktop.render.compat.Bitmap logoBitmap = com.magilhub.printnats.desktop.render.compat.BitmapFactory.decodeStream(url.openConnection().getInputStream());
+                    // SDK: this device's saved copy first (prints offline), else download + save
+                    // (MerchantApp offline sends logoBase64 in the payload instead — see ReceiptLogoCache).
+                    com.magilhub.printnats.desktop.render.compat.Bitmap logoBitmap = com.magilhub.printnats.desktop.render.ReceiptLogoCache.load(context, logoUrl);
                     if (logoBitmap != null) {
                         int targetWidth = Math.round(effectiveWidth * 0.6f);
                         int targetHeight = Math.round(((float) logoBitmap.getHeight()) * ((float) targetWidth) / ((float) logoBitmap.getWidth()));

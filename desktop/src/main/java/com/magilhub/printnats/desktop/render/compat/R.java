@@ -18,6 +18,25 @@ public final class R {
         }
     }
 
+    /**
+     * Android's {@code Resources.getIdentifier} lookup: a resource name to its id, 0 when there is no such
+     * resource. The 0 is part of the contract -- PrintUtil.buildPaymentMethodsStrip skips catalog entries
+     * whose id is 0, which is how an unknown card brand prints no logo instead of throwing.
+     */
+    static int idFor(String type, String name) {
+        if (!"drawable".equals(type) || name == null) return 0;
+        switch (name) {
+            case "pm_amex": return drawable.pm_amex;
+            case "pm_applepay": return drawable.pm_applepay;
+            case "pm_discover": return drawable.pm_discover;
+            case "pm_googlepay": return drawable.pm_googlepay;
+            case "pm_mastercard": return drawable.pm_mastercard;
+            case "pm_visa": return drawable.pm_visa;
+            case "smalllogo": return drawable.smalllogo;
+            default: return 0;
+        }
+    }
+
     static String fileFor(int id) {
         switch (id) {
             case drawable.pm_amex: return "pm_amex.png";

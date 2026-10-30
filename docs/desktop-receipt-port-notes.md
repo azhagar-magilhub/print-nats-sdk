@@ -48,18 +48,25 @@ not re-implementations.
 
 **Script rewrites only** (every edit is textual and listed here — no hand edits to copied code):
 1. package `com.magilhub.printnats.android.legacy` → `com.magilhub.printnats.desktop.render.legacy`
-2. `com.magilhub.printnats.android.R` → `…render.compat.R` (6 `R.drawable.pm_*` refs in `buildPaymentMethodsStrip`)
+2. `com.magilhub.printnats.android.R` → `…render.compat.R`. Kept for older copies; it currently matches nothing,
+   because `buildPaymentMethodsStrip` now resolves its 6 `pm_*` drawables through `drawableId(ctx, name)` →
+   `Resources.getIdentifier`, which `compat/Resources` + `compat/R.idFor` implement (0 = no such drawable)
 3. `android.graphics.*`, `android.graphics.drawable.*`, `android.content.*`, `android.util.*`, `android.text.*`,
    `android.os.*` → `…render.compat.*` (imports and fully-qualified uses, e.g. `android.graphics.DashPathEffect`,
    `android.os.StrictMode`)
 4. `androidx.annotation.*` → `…render.compat.*`; `org.json.*` → `…render.compat.json.*`
 5. deleted two unused imports in PrintUtil: `androidx.room.FtsOptions`, `…db.entity.PrintEntity`
 6. header comment lines 1–2 of MerchantApp-origin files replaced with a "GENERATED" note
+7. package `com.magilhub.printnats.android.render.` → `com.magilhub.printnats.desktop.render.` — the adapter's
+   non-legacy sibling package. `PrintUtil` calls `ReceiptLogoCache.load(context, url)` for the receipt logo, so
+   `desktop/.../render/` holds a hand-written twin of it; without this rule the generated copy does not compile
 
 Not copied: `escpos/connection/{bluetooth,usb,tcp}` (Android transports), `StarStatusDTO` (Star SDK),
 `db/entity/PrintEntity` (Room), `logging/LogFileAppender` (replaced by a forwarder to `compat.Log`).
 
-**Hand-written:** `Java2dReceiptRenderer`, `EscPosPreview`, `legacy/logging/LogFileAppender`, everything in `compat/`.
+**Hand-written:** `Java2dReceiptRenderer`, `EscPosPreview`, `ReceiptLogoCache` (twin of the adapter's
+`android.render.ReceiptLogoCache`; `load` only — no `prefetch`/`urlFrom`, so the first print does the fetch),
+`legacy/logging/LogFileAppender`, everything in `compat/`.
 
 ## Regenerating the copy
 
@@ -71,7 +78,10 @@ JAVA_HOME=~/.jenv/versions/11 ./gradlew :desktop:test
 ```
 
 If the new code uses an Android API the shim lacks, compilation fails — add the member to `compat/` (never edit
-`legacy/`). Also re-copy `android/src/main/{assets/fonts,res/drawable}` into `desktop/src/main/resources/…/render/`
+`legacy/`). If it reaches into another `com.magilhub.printnats.android.*` package, add a twin under
+`desktop/.../render/` and a rewrite rule for that package, the way rule 7 handles `android.render`.
+Diff the regenerated tree against a copy of the previous one and account for every line: anything beyond your
+rewrite is drift the stale copy was hiding. Also re-copy `android/src/main/{assets/fonts,res/drawable}` into `desktop/src/main/resources/…/render/`
 if assets change, and add new drawable ids to `compat/R.java`.
 
 ## Compat layer coverage

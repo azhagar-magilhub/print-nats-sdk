@@ -21,6 +21,11 @@ public class Context {
         return this;
     }
 
+    /** android.content.Context#getPackageName: only ever passed to {@link Resources#getIdentifier} as defPackage. */
+    public String getPackageName() {
+        return "com.magilhub.printnats.desktop.render";
+    }
+
     public AssetManager getAssets() {
         return assets;
     }

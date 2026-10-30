@@ -117,6 +117,5 @@ ETA on templates 2–5; `isFlushDB` silently clears queued/failed jobs.
      when the order carries one, so a payload without it stays key-for-key `optimizeReceiptData`'s;
   3. **defect fix** — `caption[1]` was read without a length check, so a `caption` with no comma (GSTIN and no
      FSSAI) threw `ArrayIndexOutOfBoundsException`. Now guarded by `caption.length > 1`.
-  ⚠️ `legacy/copy-from-android.sh` was NOT used to propagate these: its output no longer compiles for desktop
-  because `android/legacy` has since come to reference `com.magilhub.printnats.android.render.ReceiptLogoCache`,
-  a package the script does not rewrite. Fix that drift before the next regeneration, or these edits are lost.
+  These were first applied by hand to both copies; the desktop copy is now regenerated from the Android one
+  again (`legacy/copy-from-android.sh` was fixed in the same series — see desktop-receipt-port-notes.md rule 7).

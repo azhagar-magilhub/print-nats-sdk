@@ -13,6 +13,14 @@ public final class Resources {
         }
     }
 
+    /**
+     * android.content.res.Resources#getIdentifier: resource name to id, 0 when there is none. Only "drawable"
+     * is bundled here (the payment-method logos + smalllogo under {@link #DRAWABLE_ROOT}).
+     */
+    public int getIdentifier(String name, String defType, String defPackage) {
+        return R.idFor(defType, name);
+    }
+
     public InputStream openRawResource(int id) {
         String file = R.fileFor(id);
         if (file == null) throw new NotFoundException("Resource ID #0x" + Integer.toHexString(id));
