@@ -122,7 +122,8 @@ public final class ReceiptOptimizer {
         put(business, "currentLocation", get(bd, "currentLocation"));
         out.add("businessDetails", business);
         for (String k : new String[]{"openCashDrawer", "orderNo", "orderDate", "orderTime", "etaTime", "cardInfo",
-                "cardType", "serverStaffName", "tableName", "fullName", "phone", "comment", "orderSourceName",
+                "cardType", "serverStaffName", "tableName", "fullName", "phone", "customerGstNo", "comment",
+                "orderSourceName",
                 "orderTypeGroup", "isAutoPrint", "isScheduled", "isOrderCancelled"}) {
             put(out, k, get(rd, k));
         }

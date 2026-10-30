@@ -134,6 +134,22 @@ public class ReceiptPayloadBuilderTest {
         return out;
     }
 
+    // ---- 0. customer GST number ------------------------------------------------------------------
+
+    /**
+     * The order's customer GST number rides to the renderers as `customerGstNo`, which both the text and the
+     * image receipt print as "Customer GST No: ..." after the customer data (user spec 2026-10-30). An order
+     * without one emits no key at all, so its payload stays key-for-key optimizeReceiptData's.
+     */
+    @Test
+    public void customerGstNo() {
+        JsonObject withGst = paidOrder();
+        withGst.addProperty("customerGstNo", "29AAACB1234C1Z9");
+        assertEquals("29AAACB1234C1Z9",
+                s(builder.build(withGst, restaurant(), new FakeServices()).payload, "customerGstNo"));
+        assertFalse(builder.build(paidOrder(), restaurant(), new FakeServices()).payload.has("customerGstNo"));
+    }
+
     // ---- 1. plain paid receipt --------------------------------------------------------------------
 
     @Test

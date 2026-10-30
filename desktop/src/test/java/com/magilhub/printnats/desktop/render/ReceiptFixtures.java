@@ -71,6 +71,7 @@ final class ReceiptFixtures {
         r.addProperty("guestCount", "4");
         r.addProperty("fullName", "Jordan Lee");
         r.addProperty("phone", "2175550123");
+        r.addProperty("customerGstNo", "29AAACB1234C1Z9");
         r.addProperty("comment", "Birthday table - bring candles");
         r.addProperty("orderTypeGroup", "DineIn");
         r.addProperty("showReceiptNo", "true");

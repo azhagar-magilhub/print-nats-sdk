@@ -1044,10 +1044,11 @@ public class PrintUtil {
             if (businessDetails.getCaption() != null && !businessDetails.getCaption().isEmpty()) {
                 String[] caption = businessDetails.getCaption().split(",");
                  if(caption[0]!=null && !caption[0].isEmpty()) {
-                printerCommands.printText("GSTIN " +caption[0] + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL,
+                printerCommands.printText("GST No: " +caption[0] + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL,
                         EscPosPrinterCommands.TEXT_COLOR_BLACK, EscPosPrinterCommands.TEXT_COLOR_BLACK, EscPosPrinterCommands.TEXT_WEIGHT_BOLD);//GST
                 }
-                if(caption[1]!=null && !caption[1].isEmpty()) {
+                // caption.length guard: a caption with no comma (GSTIN only) is one element -- caption[1] threw.
+                if(caption.length > 1 && caption[1]!=null && !caption[1].isEmpty()) {
                     printerCommands.printText("FSSAI " + caption[1] + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL,
                             EscPosPrinterCommands.TEXT_COLOR_BLACK, EscPosPrinterCommands.TEXT_COLOR_BLACK, EscPosPrinterCommands.TEXT_WEIGHT_BOLD);//FSSAI
                 }
@@ -1090,6 +1091,10 @@ public class PrintUtil {
             }
             if(receipt.getFullName()!=null || receipt.getPhone()!=null){
                 printerCommands.printText( receipt.getFullName()+"   "+ receipt.getPhone()+ "\n", fontStyle);
+            }
+            // Customer GST number for the order, immediately after the customer data (user spec 2026-10-30).
+            if(receipt.getCustomerGstNo()!=null && !receipt.getCustomerGstNo().isEmpty()){
+                printerCommands.printText("Customer GST No: " + receipt.getCustomerGstNo() + "\n", fontStyle);
             }
             if(receipt.getPaymentType()!=null &&!receipt.getPaymentType().isEmpty()){
                 printerCommands.printText( receipt.getPaymentType()+ "\n", fontStyle);
@@ -3548,6 +3553,21 @@ public class PrintUtil {
         return strip;
     }
 
+    /**
+     * businessDetails.caption is the restaurant's "GSTIN,FSSAI" (either part may be empty) -- one centered
+     * header line each, as the ESC/POS text paths print them. A value with no comma is the GSTIN alone.
+     */
+    private static List<String> restaurantTaxIdLines(String caption) {
+        List<String> out = new ArrayList<>();
+        if (caption == null) return out;
+        String[] parts = caption.split(",", -1);
+        String gstin = parts.length > 0 ? parts[0].trim() : "";
+        String fssai = parts.length > 1 ? parts[1].trim() : "";
+        if (!gstin.isEmpty()) out.add("GST No: " + gstin);
+        if (!fssai.isEmpty()) out.add("FSSAI: " + fssai);
+        return out;
+    }
+
     private static Bitmap generateReceiptImageFromJson(Context context, ReceiptPojo receiptJson, boolean is58mm) {
         // --- Layout constants for visual match ---
         int printerDPI = 203;
@@ -3662,7 +3682,10 @@ public class PrintUtil {
             }
 
 
-            float lineFSpacing = 10f; // pixels between lines
+            // Header leading. Was 10f, which put the lines closer together than the text size they are drawn at
+            // (paymentSecondHeaderSize = DPI*0.14 vs footerSize = DPI*0.12) and read as congested.
+            // User spec 2026-10-30: "add line spacing lightly", evenly across the whole business-details block.
+            float lineFSpacing = 18f; // pixels between lines
             float lineHHeight = footerSize + lineFSpacing;
 
 
@@ -3709,21 +3732,29 @@ public class PrintUtil {
 //                        }
                 if (!contactNumber.isEmpty()) {
                     canvas.drawText(contactNumber, width / 2, currentY, paint);
-                    currentY += footerSize;
+                    currentY += lineHHeight;
                 }
 
                 String website = receiptJson.getBusinessDetails().getWebsite() != null ?
                         receiptJson.getBusinessDetails().getWebsite() : "";
                 if (!website.isEmpty()) {
                     canvas.drawText(website, width / 2, currentY, paint);
-                    currentY += footerSize;
+                    currentY += lineHHeight;
                 }
 
                 String email = receiptJson.getBusinessDetails().getEmail() != null ?
                         receiptJson.getBusinessDetails().getEmail() : "";
                 if (!email.isEmpty()) {
                     canvas.drawText(email, width / 2, currentY, paint);
-                    currentY += footerSize;
+                    currentY += lineHHeight;
+                }
+                // Restaurant tax ids from businessDetails.caption ("GSTIN,FSSAI") -- the same two lines the
+                // ESC/POS text receipt prints above. User spec 2026-10-30: label "GST No:".
+                // Tax ids sit on the same even leading as the rest of the header -- no extra gap before
+                // them (user spec 2026-10-30: "it should be even for this section").
+                for (String taxLine : restaurantTaxIdLines(receiptJson.getBusinessDetails().getCaption())) {
+                    canvas.drawText(taxLine, width / 2, currentY, paint);
+                    currentY += lineHHeight;
                 }
                 currentY += footerSize;
             }
@@ -4658,6 +4689,12 @@ public class PrintUtil {
                 canvas.drawText(phone, width / 2, currentY + lineFHeight, paint);
                 currentY += lineFHeight;
             }
+            // Customer GST number for the order, right after the customer data (user spec 2026-10-30).
+            String customerGstNo = receiptJson.getCustomerGstNo() != null ? receiptJson.getCustomerGstNo() : "";
+            if (!customerGstNo.isEmpty()) {
+                canvas.drawText("Customer GST No: " + customerGstNo, width / 2, currentY + lineFHeight, paint);
+                currentY += lineFHeight;
+            }
             currentY += lineFHeight;
 
             String reviewQRLink = receiptJson.getReviewQRLink() != null ? receiptJson.getReviewQRLink() : "";
@@ -4837,7 +4874,10 @@ public class PrintUtil {
             }
 
 
-            float lineFSpacing = 10f; // pixels between lines
+            // Header leading. Was 10f, which put the lines closer together than the text size they are drawn at
+            // (paymentSecondHeaderSize = DPI*0.14 vs footerSize = DPI*0.12) and read as congested.
+            // User spec 2026-10-30: "add line spacing lightly", evenly across the whole business-details block.
+            float lineFSpacing = 18f; // pixels between lines
             float lineHHeight = footerSize + lineFSpacing;
 
 
@@ -4868,21 +4908,29 @@ public class PrintUtil {
 
                 if (!contactNumber.isEmpty()) {
                     canvas.drawText(contactNumber, width / 2, currentY, paint);
-                    currentY += footerSize;
+                    currentY += lineHHeight;
                 }
 
                 String website = receiptJson.getBusinessDetails().getWebsite() != null ?
                         receiptJson.getBusinessDetails().getWebsite() : "";
                 if (!website.isEmpty()) {
                     canvas.drawText(website, width / 2, currentY, paint);
-                    currentY += footerSize;
+                    currentY += lineHHeight;
                 }
 
                 String email = receiptJson.getBusinessDetails().getEmail() != null ?
                         receiptJson.getBusinessDetails().getEmail() : "";
                 if (!email.isEmpty()) {
                     canvas.drawText(email, width / 2, currentY, paint);
-                    currentY += footerSize;
+                    currentY += lineHHeight;
+                }
+                // Restaurant tax ids from businessDetails.caption ("GSTIN,FSSAI") -- the same two lines the
+                // ESC/POS text receipt prints above. User spec 2026-10-30: label "GST No:".
+                // Tax ids sit on the same even leading as the rest of the header -- no extra gap before
+                // them (user spec 2026-10-30: "it should be even for this section").
+                for (String taxLine : restaurantTaxIdLines(receiptJson.getBusinessDetails().getCaption())) {
+                    canvas.drawText(taxLine, width / 2, currentY, paint);
+                    currentY += lineHHeight;
                 }
                 currentY += footerSize;
             }
@@ -5312,6 +5360,12 @@ public class PrintUtil {
                 canvas.drawText(phone, width / 2, currentY + lineFHeight, paint);
                 currentY += lineFHeight;
             }
+            // Customer GST number for the order, right after the customer data (user spec 2026-10-30).
+            String customerGstNo = receiptJson.getCustomerGstNo() != null ? receiptJson.getCustomerGstNo() : "";
+            if (!customerGstNo.isEmpty()) {
+                canvas.drawText("Customer GST No: " + customerGstNo, width / 2, currentY + lineFHeight, paint);
+                currentY += lineFHeight;
+            }
             currentY += lineFHeight;
 
             String reviewQRLink = receiptJson.getReviewQRLink() != null ? receiptJson.getReviewQRLink() : "";
@@ -5388,11 +5442,12 @@ public class PrintUtil {
                 if (receipt.getBusinessDetails().getCaption() != null && !receipt.getBusinessDetails().getCaption().isEmpty()) {
                     String[] caption = receipt.getBusinessDetails().getCaption().split(",");
                     if (caption[0] != null && !caption[0].isEmpty()) {
-                        printerCommands.printText("GSTIN " + caption[0] + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL,
+                        printerCommands.printText("GST No: " + caption[0] + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL,
                                 EscPosPrinterCommands.TEXT_COLOR_BLACK, EscPosPrinterCommands.TEXT_COLOR_BLACK, 
                                 EscPosPrinterCommands.TEXT_WEIGHT_BOLD);
                     }
-                    if (caption[1] != null && !caption[1].isEmpty()) {
+                    // caption.length guard: a caption with no comma (GSTIN only) is one element -- caption[1] threw.
+                    if (caption.length > 1 && caption[1] != null && !caption[1].isEmpty()) {
                         printerCommands.printText("FSSAI " + caption[1] + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL,
                                 EscPosPrinterCommands.TEXT_COLOR_BLACK, EscPosPrinterCommands.TEXT_COLOR_BLACK, 
                                 EscPosPrinterCommands.TEXT_WEIGHT_BOLD);
@@ -5444,6 +5499,12 @@ public class PrintUtil {
                 String customerInfo = (receipt.getFullName() != null ? receipt.getFullName() : "") + 
                                     (receipt.getPhone() != null ? "   " + receipt.getPhone() : "");
                 printerCommands.printText(customerInfo + "\n", EscPosPrinterCommands.TEXT_WEIGHT_BOLD);
+            }
+
+            // Customer GST number for the order, immediately after the customer data (user spec 2026-10-30).
+            if (receipt.getCustomerGstNo() != null && !receipt.getCustomerGstNo().isEmpty()) {
+                printerCommands.printText("Customer GST No: " + receipt.getCustomerGstNo() + "\n",
+                        EscPosPrinterCommands.TEXT_WEIGHT_BOLD);
             }
 
             // Print payment type

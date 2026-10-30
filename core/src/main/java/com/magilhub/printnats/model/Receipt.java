@@ -108,6 +108,11 @@ public class Receipt {
     @Expose
     private String fullName;
 
+    /** The order's customer GST number -- printed as "Customer GST No: ..." right after the customer data. */
+    @SerializedName("customerGstNo")
+    @Expose
+    private String customerGstNo;
+
     // Both added to fix a real bug (STN-296): buildPrintStatusEvent reads these
     // back out of the saved print-job's data blob (PrintEntity.data) via
     // data.optBoolean("reprintKOT", ...) / data.optString("extraData", ...).
@@ -814,6 +819,14 @@ public class Receipt {
 
     public void setFullName(String fullName) {
         this.fullName = fullName;
+    }
+
+    public String getCustomerGstNo() {
+        return customerGstNo;
+    }
+
+    public void setCustomerGstNo(String customerGstNo) {
+        this.customerGstNo = customerGstNo;
     }
 
     public Object getIsAutoAcceptFeatureIsEnabled() {

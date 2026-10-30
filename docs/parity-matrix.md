@@ -108,3 +108,15 @@ ETA on templates 2–5; `isFlushDB` silently clears queued/failed jobs.
 | C | Thermal T1 | `kotAlignmenet` "TEXT_ALIGN_LEFT" branch compares against `kotFont` (dead code; both branches LEFT) |
 
 - **EOD slip heading** — MerchantApp prints "Cash Reconcilitation"; the SDK prints the corrected "Cash Reconciliation" (`legacy/.../PrintUtil.java`). Intentional text divergence.
+- **GST on the receipt** (2026-10-30, maghilOrder `offlineWebRelease-4.2-gst` parity) — three intentional divergences in
+  `legacy/.../PrintUtil.java`, applied to the Android copy AND, by hand, to the desktop copy:
+  1. the restaurant tax-id line is labelled `GST No: ` (MerchantApp: `GSTIN `); `FSSAI ` is untouched;
+  2. a `Customer GST No: <receipt.customerGstNo>` line prints right after the customer name/phone on all four
+     receipt paths — `printReceipt`, `printReceiptTextJson` and both image generators. `customerGstNo` is new on
+     `model/Receipt`, legacy `models/Receipt` and `pojo/ReceiptPojo`; `ReceiptPayloadBuilder` only emits the key
+     when the order carries one, so a payload without it stays key-for-key `optimizeReceiptData`'s;
+  3. **defect fix** — `caption[1]` was read without a length check, so a `caption` with no comma (GSTIN and no
+     FSSAI) threw `ArrayIndexOutOfBoundsException`. Now guarded by `caption.length > 1`.
+  ⚠️ `legacy/copy-from-android.sh` was NOT used to propagate these: its output no longer compiles for desktop
+  because `android/legacy` has since come to reference `com.magilhub.printnats.android.render.ReceiptLogoCache`,
+  a package the script does not rewrite. Fix that drift before the next regeneration, or these edits are lost.

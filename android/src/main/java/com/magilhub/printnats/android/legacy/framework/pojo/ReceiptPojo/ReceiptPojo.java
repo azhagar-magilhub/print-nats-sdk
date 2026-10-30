@@ -28,6 +28,8 @@ public class ReceiptPojo {
     private String tableName;
     private String fullName;
     private String phone;
+    /** The order's customer GST number -- printed as "Customer GST No: ..." right after the customer data. */
+    private String customerGstNo;
     private String comment;
     private String orderSourceName;
     private String orderTypeGroup;
@@ -255,6 +257,7 @@ public class ReceiptPojo {
     public String getTableName() { return tableName; }
     public String getFullName() { return fullName; }
     public String getPhone() { return phone; }
+    public String getCustomerGstNo() { return customerGstNo; }
     public String getComment() { return comment; }
     public String getOrderSourceName() { return orderSourceName; }
     public String getOrderTypeGroup() { return orderTypeGroup; }

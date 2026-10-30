@@ -197,6 +197,13 @@ public final class ReceiptPayloadBuilder {
         JsonObject u = order.deepCopy();
         u.add("fullName", Js.or(get(order, "fullName"), new JsonPrimitive("")).deepCopy());
         u.add("phone", Js.or(get(order, "phone"), new JsonPrimitive("")).deepCopy());
+        // The order's customer GST number -- printed as "Customer GST No: ..." after the customer data on both
+        // the text and the image receipt (user spec 2026-10-30). Only added when the order carries one, so a
+        // payload for an order without a customer GST stays key-for-key identical to optimizeReceiptData's.
+        JsonElement customerGst = get(order, "customerGstNo");
+        if (truthy(customerGst) && jsLength(customerGst) > 0) {
+            u.add("customerGstNo", customerGst.deepCopy());
+        }
         u.addProperty("paymentType", "IN".equals(restaurant.country()) ? paymentType.toString() : "");
         u.add("items", updatedItems);
         JsonArray totalsArr = new JsonArray();
