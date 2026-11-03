@@ -308,6 +308,27 @@ public class ReceiptPayloadBuilderTest {
     // ---- 3. India dine-in tax split ---------------------------------------------------------------
 
     @Test
+    public void indiaPickupSplitsCgstSgstFromTaxRowWithoutServiceCharge() {
+        JsonObject o = paidOrder();
+        o.add("totals", j("{'a':[{'code':'1.0','title':'Item Total','value':'100.00'},"
+                + "{'code':'2.0','title':'Tax','value':'10.00'},{'code':'5.0','title':'Grand Total','value':'110.00'}]}")
+                .getAsJsonArray("a"));
+        JsonObject rj = restaurantJson("IN");
+        List<String> t = titles(builder.build(o, new Restaurant(rj), new FakeServices()).payload);
+        assertEquals(Arrays.asList("Item Total=100.00", "CGST @2.5%=5.00", "SGST @2.5%=5.00", "Grand Total=110.00"), t);
+    }
+
+    @Test
+    public void usPickupKeepsTheSingleTaxRow() {
+        JsonObject o = paidOrder();
+        o.add("totals", j("{'a':[{'code':'1.0','title':'Item Total','value':'100.00'},"
+                + "{'code':'2.0','title':'Tax','value':'10.00'},{'code':'5.0','title':'Grand Total','value':'110.00'}]}")
+                .getAsJsonArray("a"));
+        List<String> t = titles(builder.build(o, restaurant(), new FakeServices()).payload);
+        assertEquals(Arrays.asList("Item Total=100.00", "Tax=10.00", "Grand Total=110.00"), t);
+    }
+
+    @Test
     public void indiaDineInSplitsCgstSgstAndServiceCharge() {
         JsonObject o = j("{'orderId':'ORD-9','orderNo':'000123','orderTypeId':'OT-D','orderSource':'D','isQSROrder':false,"
                 + "'itemTax':'10.01','serviceTax':'5.00','items':[],"

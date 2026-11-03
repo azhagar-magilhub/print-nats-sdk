@@ -156,9 +156,12 @@ public final class ReceiptPayloadBuilder {
         JsonArray updatedItems = applyOriginalPrice(get(order, "items"));
         List<JsonObject> updatedTotal = new ArrayList<>();
         JsonArray orderTotals = Js.isArray(get(order, "totals")) ? get(order, "totals").getAsJsonArray() : new JsonArray();
-        if ("D".equals(orderTypeGroup) && "IN".equals(restaurant.country())
-                && (truthy(get(order, "itemTax")) || truthy(get(order, "serviceTax")))) {
-            indiaDineInTotals(order, rd, orderTotals, updatedTotal);
+        // India: CGST + SGST on every order type (dine-in adds SC). Beyond MerchantApp, which splits dine-in only.
+        boolean dineIn = "D".equals(orderTypeGroup);
+        if ("IN".equals(restaurant.country())
+                && (dineIn ? (truthy(get(order, "itemTax")) || truthy(get(order, "serviceTax")))
+                           : (truthy(get(order, "itemTax")) || indiaTaxRowValue(orderTotals) > 0))) {
+            indiaDineInTotals(order, rd, orderTotals, updatedTotal, dineIn);
         } else {
             for (JsonElement t : orderTotals) {
                 if (Js.parseFloat(get(t, "value")) >= 0.01) updatedTotal.add(t.getAsJsonObject());
@@ -359,7 +362,20 @@ public final class ReceiptPayloadBuilder {
 
     // ---- India dine-in split (~843-903) ----------------------------------------------------------------
 
-    private static void indiaDineInTotals(JsonObject order, JsonObject rd, JsonArray totals, List<JsonObject> out) {
+    /** Value of the server's plain "Tax" totals row(s); 0 when absent. */
+    private static double indiaTaxRowValue(JsonArray totals) {
+        double sum = 0;
+        for (JsonElement t : totals) {
+            if (Js.strictEq(get(t, "title"), "Tax")) {
+                double v = Js.parseFloat(get(t, "value"));
+                if (!Double.isNaN(v)) sum += v;
+            }
+        }
+        return sum;
+    }
+
+    private static void indiaDineInTotals(JsonObject order, JsonObject rd, JsonArray totals, List<JsonObject> out,
+                                          boolean dineIn) {
         double orderTotal = 0;
         double itemTax = 0;
         if (truthy(get(order, "itemTax"))) itemTax = Js.parseFloat(get(order, "itemTax"));
@@ -383,17 +399,19 @@ public final class ReceiptPayloadBuilder {
             }
         }
         JsonElement orderServiceTax = get(order, "serviceTax");
-        if (truthy(orderServiceTax) && truthy(serviceTax) && truthy(get(serviceTax, "rate"))
+        if (dineIn && truthy(orderServiceTax) && truthy(serviceTax) && truthy(get(serviceTax, "rate"))
                 && Js.parseFloat(orderServiceTax) > 0) {
             out.add(totalRow("6", "SC @" + string(get(serviceTax, "rate")) + "%",
                     Js.toFixed(Js.parseFloat(orderServiceTax), 2), "6", "6"));
         }
         JsonElement rate = get(get(rd, "defaultTax"), "rate"); // restaurantTax = currentRestaurantDetail.defaultTax
-        if (itemTax != 0 && !Double.isNaN(itemTax) && itemTax > 0 && truthy(rate)) {
-            String half = Js.numberToString(Js.toNumber(rate) / 2);
+        if (Double.isNaN(itemTax) || itemTax <= 0) itemTax = indiaTaxRowValue(totals); // no itemTax: split the Tax row
+        if (itemTax > 0) {
+            // Without a configured rate the rows print as plain CGST / SGST.
+            String suffix = truthy(rate) ? " @" + Js.numberToString(Js.toNumber(rate) / 2) + "%" : "";
             String value = Js.toFixed(itemTax / 2, 2);
-            out.add(totalRow("5", "CGST @" + half + "%", value, "5", "5"));
-            out.add(totalRow("4", "SGST @" + half + "%", value, "4", "4"));
+            out.add(totalRow("5", "CGST" + suffix, value, "5", "5"));
+            out.add(totalRow("4", "SGST" + suffix, value, "4", "4"));
         }
         out.add(totalRow("7", "Grand Total", Js.toFixed(orderTotal, 2), "7", "7"));
     }

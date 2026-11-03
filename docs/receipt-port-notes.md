@@ -135,3 +135,6 @@ through (normally absent). Also: `restaurantOrderTypes`, `defaultTax` and the lo
 - `getOrderTypeGroup` matches ids with `==`; `Restaurant.orderTypeGroup` compares the string forms (same result for
   string/number ids).
 - `printReceipt` also computes `receiptOfferRows`, but only the non-network `RNPrint` HTML path uses it; it isn't ported.
+
+> **Deviation (2026-11-03):** India CGST/SGST now split on EVERY order type (from `itemTax`, else the server Tax row;
+> plain `CGST`/`SGST` when no `defaultTax.rate`). `SC @r%` stays dine-in only. MerchantApp splits dine-in only.
