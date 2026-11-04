@@ -207,6 +207,12 @@ public final class ReceiptPayloadBuilder {
         if (truthy(customerGst) && jsLength(customerGst) > 0) {
             u.add("customerGstNo", customerGst.deepCopy());
         }
+        // The placeholder number a renumbered offline order was first printed with ("Ref No #00013A" under the order
+        // number). Only added when the order has one, so every other payload stays key-for-key optimizeReceiptData's.
+        JsonElement offlineOrderNo = get(order, "offlineOrderNo");
+        if (truthy(offlineOrderNo) && jsLength(offlineOrderNo) > 0) {
+            u.add("offlineOrderNo", offlineOrderNo.deepCopy());
+        }
         u.addProperty("paymentType", "IN".equals(restaurant.country()) ? paymentType.toString() : "");
         u.add("items", updatedItems);
         JsonArray totalsArr = new JsonArray();

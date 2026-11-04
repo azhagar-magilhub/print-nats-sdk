@@ -113,6 +113,13 @@ public class Receipt {
     @Expose
     private String customerGstNo;
 
+    /** The placeholder order number (`00013A`) a POS order was first printed with, before the outlet's master gave it
+     *  the shared number (maghilOrder offline order-number sequencing). Printed as "Ref No #00013A" under the order
+     *  number; absent for every other order. */
+    @SerializedName("offlineOrderNo")
+    @Expose
+    private String offlineOrderNo;
+
     // Both added to fix a real bug (STN-296): buildPrintStatusEvent reads these
     // back out of the saved print-job's data blob (PrintEntity.data) via
     // data.optBoolean("reprintKOT", ...) / data.optString("extraData", ...).
@@ -833,6 +840,14 @@ public class Receipt {
 
     public void setCustomerGstNo(String customerGstNo) {
         this.customerGstNo = customerGstNo;
+    }
+
+    public String getOfflineOrderNo() {
+        return offlineOrderNo;
+    }
+
+    public void setOfflineOrderNo(String offlineOrderNo) {
+        this.offlineOrderNo = offlineOrderNo;
     }
 
     public Object getIsAutoAcceptFeatureIsEnabled() {

@@ -863,6 +863,11 @@ public class PrintUtil {
                 String orderNoLine = centerTextPadStrict("#" + orderNoValue, cols, true);
                 printerCommands.printText("\n" + orderNoLine, EscPosPrinterCommands.TEXT_SIZE_DOUBLE_WIDTH);
             }
+            // Renumbered offline order: the number it was first printed with (maghilOrder order-number sequencing).
+            if (receipt.getOfflineOrderNo() != null && !receipt.getOfflineOrderNo().trim().isEmpty()) {
+                String refNoLine = centerTextPadStrict("Ref No #" + receipt.getOfflineOrderNo().trim(), cols, false);
+                printerCommands.printText("\n" + refNoLine, EscPosPrinterCommands.TEXT_SIZE_NORMAL);
+            }
 
             printerCommands.printText("\n", EscPosPrinterCommands.TEXT_SIZE_DOUBLE_WIDTH);
             printerCommands.setAlign(EscPosPrinterCommands.TEXT_ALIGN_LEFT);
@@ -3831,6 +3836,13 @@ public class PrintUtil {
             paint.setTextAlign(Paint.Align.RIGHT);
             canvas.drawText(orderNoVal, rightX, infoY, paint);
             currentY += headerSize * lineSpacingMultiplier;
+            // Renumbered offline order: the number it was first printed with (maghilOrder order-number sequencing).
+            String refOrderNo = receiptJson.getOfflineOrderNo() != null ? receiptJson.getOfflineOrderNo().trim() : "";
+            if (!refOrderNo.isEmpty()) {
+                paint.setTextAlign(Paint.Align.RIGHT);
+                canvas.drawText("Ref No #" + refOrderNo, rightX, currentY + headerSize, paint);
+                currentY += headerSize * lineSpacingMultiplier;
+            }
             // Determine currency symbol
             String currencySymbol = "";
             if (receiptJson.getBusinessDetails().getCountry() != null) {
@@ -5019,6 +5031,13 @@ public class PrintUtil {
             paint.setTextAlign(Paint.Align.RIGHT);
             canvas.drawText(orderNoVal, rightX, infoY, paint);
             currentY += headerSize * lineSpacingMultiplier;
+            // Renumbered offline order: the number it was first printed with (maghilOrder order-number sequencing).
+            String refOrderNo = receiptJson.getOfflineOrderNo() != null ? receiptJson.getOfflineOrderNo().trim() : "";
+            if (!refOrderNo.isEmpty()) {
+                paint.setTextAlign(Paint.Align.RIGHT);
+                canvas.drawText("Ref No #" + refOrderNo, rightX, currentY + headerSize, paint);
+                currentY += headerSize * lineSpacingMultiplier;
+            }
             // Determine currency symbol
             String currencySymbol = "";
             if (receiptJson.getBusinessDetails() != null && receiptJson.getBusinessDetails().getCountry() != null) {
@@ -5483,6 +5502,10 @@ public class PrintUtil {
                 orderNo += " - " + receipt.getOrderSourceName();
             }
             printerCommands.printText("\n" + orderNo + "\n", EscPosPrinterCommands.TEXT_SIZE_DOUBLE_WIDTH);
+            // Renumbered offline order: the number it was first printed with (maghilOrder order-number sequencing).
+            if (receipt.getOfflineOrderNo() != null && !receipt.getOfflineOrderNo().trim().isEmpty()) {
+                printerCommands.printText("Ref No #" + receipt.getOfflineOrderNo().trim() + "\n", EscPosPrinterCommands.TEXT_SIZE_NORMAL);
+            }
 
             // Print OTP if available
 //            if (receipt.getOTP() != null) {

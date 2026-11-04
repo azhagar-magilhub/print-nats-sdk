@@ -30,6 +30,10 @@ public class ReceiptPojo {
     private String phone;
     /** The order's customer GST number -- printed as "Customer GST No: ..." right after the customer data. */
     private String customerGstNo;
+    /** The placeholder order number (`00013A`) a POS order was first printed with, before the outlet's master gave it
+     *  the shared number (maghilOrder offline order-number sequencing). Printed as "Ref No #00013A" under the order
+     *  number; absent for every other order. */
+    private String offlineOrderNo;
     private String comment;
     private String orderSourceName;
     private String orderTypeGroup;
@@ -258,6 +262,7 @@ public class ReceiptPojo {
     public String getFullName() { return fullName; }
     public String getPhone() { return phone; }
     public String getCustomerGstNo() { return customerGstNo; }
+    public String getOfflineOrderNo() { return offlineOrderNo; }
     public String getComment() { return comment; }
     public String getOrderSourceName() { return orderSourceName; }
     public String getOrderTypeGroup() { return orderTypeGroup; }

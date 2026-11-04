@@ -150,6 +150,22 @@ public class ReceiptPayloadBuilderTest {
         assertFalse(builder.build(paidOrder(), restaurant(), new FakeServices()).payload.has("customerGstNo"));
     }
 
+    // ---- 0b. Ref No of a renumbered offline order --------------------------------------------------
+
+    /**
+     * maghilOrder's offline order-number sequencing: an order the outlet's master renumbered keeps the number it was
+     * first printed with as `offlineOrderNo`, printed as "Ref No #00013A" under the order number. An order without
+     * one emits no key at all, so its payload stays key-for-key optimizeReceiptData's.
+     */
+    @Test
+    public void offlineOrderNo() {
+        JsonObject renumbered = paidOrder();
+        renumbered.addProperty("offlineOrderNo", "00013A");
+        assertEquals("00013A",
+                s(builder.build(renumbered, restaurant(), new FakeServices()).payload, "offlineOrderNo"));
+        assertFalse(builder.build(paidOrder(), restaurant(), new FakeServices()).payload.has("offlineOrderNo"));
+    }
+
     // ---- 1. plain paid receipt --------------------------------------------------------------------
 
     @Test

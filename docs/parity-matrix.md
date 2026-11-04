@@ -128,3 +128,11 @@ ETA on templates 2–5; `isFlushDB` silently clears queued/failed jobs.
      FSSAI) threw `ArrayIndexOutOfBoundsException`. Now guarded by `caption.length > 1`.
   These were first applied by hand to both copies; the desktop copy is now regenerated from the Android one
   again (`legacy/copy-from-android.sh` was fixed in the same series — see desktop-receipt-port-notes.md rule 7).
+- **Ref No of a renumbered offline order** (2026-11-04, maghilOrder offline order-number sequencing) — a
+  `Ref No #<receipt.offlineOrderNo>` line, absent in MerchantApp: the number a POS order was first printed with
+  (`00013A`) before the outlet's master gave it the shared number. Printed on all four receipt paths, under the
+  order number — `printReceipt` (centered, normal size, under `#orderNo`), `printReceiptTextJson` (under
+  `#orderNo`) and both image generators (right-aligned, under the `Order #` info row). `offlineOrderNo` is new on
+  `model/Receipt`, legacy `models/Receipt` and `pojo/ReceiptPojo`; `ReceiptPayloadBuilder` only emits the key when
+  the order carries one (and `ReceiptOptimizer` passes it through), so every other payload stays key-for-key
+  `optimizeReceiptData`'s. Edited in the Android copy; the desktop copy regenerated with `copy-from-android.sh`.
