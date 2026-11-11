@@ -791,7 +791,7 @@ public class PrintUtil {
             if (obj != null) {
                 Log.e(TAG, "obj" + obj);
                 String country = obj.getString("restaurantCountry");
-                String currency = country.contains("US") ? "$" : "₹";
+                String currency = country.contains("US") ? "$" : "Rs."; // ESC/POS text: a ₹ prints as "?"
                 double sales = obj.getDouble("cashSales");
                 double countedAmount = obj.getDouble("countedAmount");
                 double expectedAmount = obj.getDouble("expectedAmount");
@@ -1120,7 +1120,7 @@ public class PrintUtil {
                     receipt.getCountryCd() != null &&
                     receipt.getCountryCd().toUpperCase().contains("US")
                             ? "$"
-                            : "₹";
+                            : "Rs."; // ESC/POS text: a ₹ prints as "?"
             for (Total total : receipt.getTotals()) {
                 if (!total.getTitle().equals("Grand Total")) {
                     printerCommands.setAlign(EscPosPrinterCommands.TEXT_ALIGN_LEFT);
