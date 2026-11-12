@@ -194,6 +194,91 @@ public class PrintUtil {
         }
     }
 
+    /**
+     * Cash summary slip as a bitmap, for outlets whose currency sign is not in the printer's ESC/POS code page.
+     * maghilOrder 2026-11-12: "Rs. pathila currency symbol display pananu" — the text slip printed "?" for ₹
+     * (2e317e6 swapped it for "Rs."); drawn as a picture, ₹ prints like it does on the bitmap receipts.
+     * Same lines and order as the text slip.
+     */
+    static Bitmap cashSummaryBitmap(String outlet1, String outlet2, String start, String end, String staff,
+                                    String currency, double floatAmount, double sales, double payIn, double payOut,
+                                    double expected, double counted, double variance, boolean is58mm) {
+        int width = is58mm ? 383 : 631; // same printing zone as the EOD bitmap
+        float pad = width * 0.02f;
+        float normal = is58mm ? 20f : 26f;
+        float big = is58mm ? 28f : 36f;
+        java.util.List<Object[]> rows = new java.util.ArrayList<>(); // {kind, left, right}; kind: T title, N normal, L label/value, R rule, S space
+        rows.add(new Object[]{"T", outlet1.trim(), null});
+        if (outlet2 != null && !outlet2.trim().isEmpty()) rows.add(new Object[]{"T", outlet2.trim(), null});
+        rows.add(new Object[]{"S", null, null});
+        rows.add(new Object[]{"L", "Start Time", start});
+        rows.add(new Object[]{"L", "End Time", end});
+        rows.add(new Object[]{"L", "Staff", staff});
+        rows.add(new Object[]{"R", null, null});
+        rows.add(new Object[]{"H", "Sales Summary", null});
+        rows.add(new Object[]{"L", "Float amount", currency + String.format("%.2f", floatAmount)});
+        rows.add(new Object[]{"L", "Cash Sales", currency + String.format("%.2f", sales)});
+        rows.add(new Object[]{"L", "PayIn", currency + String.format("%.2f", payIn)});
+        rows.add(new Object[]{"L", "Payout", "(" + currency + String.format("%.2f", payOut) + ")"});
+        rows.add(new Object[]{"R", null, null});
+        rows.add(new Object[]{"H", "Cash Reconciliation", null});
+        rows.add(new Object[]{"L", "Expected Amount", currency + String.format("%.2f", expected)});
+        rows.add(new Object[]{"L", "Counted Amount", currency + String.format("%.2f", counted)});
+        rows.add(new Object[]{"L", "Variance", currency + String.format("%.2f", variance)});
+
+        float lineGap = normal * 0.6f;
+        float height = pad;
+        for (Object[] r : rows) {
+            String k = (String) r[0];
+            height += ("T".equals(k) || "H".equals(k)) ? big + lineGap : "S".equals(k) ? normal : "R".equals(k) ? normal : normal + lineGap;
+        }
+        height += normal * 3;
+
+        Bitmap bmp = Bitmap.createBitmap(width, Math.round(height), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        canvas.drawColor(Color.WHITE);
+        Paint paint = new Paint();
+        paint.setAntiAlias(true);
+        paint.setColor(Color.BLACK);
+        paint.setStrokeWidth(2f);
+
+        float y = pad;
+        for (Object[] r : rows) {
+            String k = (String) r[0];
+            if ("T".equals(k)) {
+                paint.setTypeface(Typeface.DEFAULT_BOLD);
+                paint.setTextSize(big);
+                paint.setTextAlign(Paint.Align.CENTER);
+                y += big;
+                canvas.drawText((String) r[1], width / 2f, y, paint);
+                y += lineGap;
+            } else if ("H".equals(k)) {
+                paint.setTypeface(Typeface.DEFAULT_BOLD);
+                paint.setTextSize(big);
+                paint.setTextAlign(Paint.Align.LEFT);
+                y += big;
+                canvas.drawText((String) r[1], pad, y, paint);
+                y += lineGap;
+            } else if ("L".equals(k)) {
+                paint.setTypeface(Typeface.DEFAULT);
+                paint.setTextSize(normal);
+                y += normal;
+                paint.setTextAlign(Paint.Align.LEFT);
+                canvas.drawText((String) r[1], pad, y, paint);
+                paint.setTextAlign(Paint.Align.RIGHT);
+                canvas.drawText(r[2] == null ? "" : (String) r[2], width - pad, y, paint);
+                y += lineGap;
+            } else if ("R".equals(k)) {
+                y += normal / 2f;
+                canvas.drawLine(pad, y, width - pad, y, paint);
+                y += normal / 2f;
+            } else {
+                y += normal;
+            }
+        }
+        return bmp;
+    }
+
     private static String formatLoyaltyRedeemedTotalValue(String value, String currencySymbol) {
         double amount = 0.0d;
         if (value != null && !value.trim().isEmpty()) {
@@ -791,7 +876,8 @@ public class PrintUtil {
             if (obj != null) {
                 Log.e(TAG, "obj" + obj);
                 String country = obj.getString("restaurantCountry");
-                String currency = country.contains("US") ? "$" : "Rs."; // ESC/POS text: a ₹ prints as "?"
+                boolean usOutlet = country.contains("US");
+                String currency = usOutlet ? "$" : "Rs."; // ESC/POS text: a ₹ prints as "?"
                 double sales = obj.getDouble("cashSales");
                 double countedAmount = obj.getDouble("countedAmount");
                 double expectedAmount = obj.getDouble("expectedAmount");
@@ -804,6 +890,19 @@ public class PrintUtil {
                 String user = obj.getString("user");
                 double variance = obj.getDouble("variance");
 
+                if (!usOutlet) {
+                    // ₹ is not in the printer's text code page: print this slip as a picture so the sign shows.
+                    String[] outletParts = outletName.split(",");
+                    Bitmap slip = cashSummaryBitmap(
+                            outletParts[0], outletParts.length > 1 ? outletParts[1] : "",
+                            shiftStartTime, shiftEndTime, user, "\u20B9",
+                            floatAmount, sales, payIn, payOut, expectedAmount, countedAmount, variance, is58mm);
+                    printerCommands.printImage(EscPosPrinterCommands.bitmapToBytes(slip));
+                    printerCommands.feedPaper(3);
+                    printerCommands.cutPaper();
+                    Thread.sleep(1000);
+                    return;
+                }
                 printerCommands.printText(outletName.split(",")[0].toString() + "\n\n", EscPosPrinterCommands.TEXT_SIZE_BIG);
                 printerCommands.printText(outletName.split(",")[1].toString() + "\n\n", EscPosPrinterCommands.TEXT_SIZE_BIG);
                 printerCommands.setAlign(EscPosPrinterCommands.TEXT_ALIGN_LEFT);

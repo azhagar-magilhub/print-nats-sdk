@@ -12,6 +12,7 @@
     "js/android/src",
     "core/src/main",
     "android/src/main",
+    "android/natsserver.gradle",
     "react-native.config.js"
   ],
   "license": "UNLICENSED",
